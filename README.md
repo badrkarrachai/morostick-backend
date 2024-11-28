@@ -1,111 +1,228 @@
-# WanaShip-Backend
+# MoroStick Backend
 
-![github-icon](https://github.com/user-attachments/assets/9e3ef174-0b83-4d34-9c0f-33477d8a298c)
+A robust backend service for WhatsApp sticker creation and management, built with Express.js and TypeScript.
 
-WanaShip-Backend is the server-side component of the WanaShip application, a modern shipping and parcel management system. This Node.js backend provides robust APIs for user management, parcel tracking, and shipping operations.
-
-[![Node.js](https://img.shields.io/badge/Node.js-20.x-green.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.5.4-blue.svg)](https://www.typescriptlang.org/)
 [![Express](https://img.shields.io/badge/Express-4.19.2-lightgrey.svg)](https://expressjs.com/)
 [![MongoDB](https://img.shields.io/badge/Mongoose-8.5.2-green.svg)](https://mongoosejs.com/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5.4-blue.svg)](https://www.typescriptlang.org/)
+[![Sharp](https://img.shields.io/badge/Sharp-0.33.5-yellow.svg)](https://sharp.pixelplumbing.com/)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
 
 ## 🚀 Features
 
-- **User Authentication**: Secure login and registration system with JWT
-- **Parcel Management**: Create, update, and track parcels
-- **Address Management**: Manage shipping and receiving addresses
-- **Media Handling**: Upload and manage images for parcels and user profiles
-- **OAuth Integration**: Sign in with Google and Discord
-- **Role-Based Access Control**: Differentiate between user types (e.g., customers, admins)
+### Core Functionality
+
+- Complete WhatsApp sticker pack creation and management
+- WebP conversion and optimization
+- Sticker size and format validation
+- Pack tray icon customization
+- Analytics and trending packs
+
+### Authentication & Security
+
+- JWT-based authentication
+- Social login (Google, Facebook)
+- OTP verification system
+- Rate limiting
+- Request sanitization
+
+### Media Handling
+
+- CloudFlare R2 storage integration
+- Image processing and optimization
+- Format conversion
+- Size validation
+
+### User Management
+
+- Profile management
+- Sticker collection system
+- Pack sharing capabilities
+- Usage analytics
 
 ## 🛠 Tech Stack
 
-- **Node.js**: Runtime environment
-- **Express.js**: Web application framework
-- **MongoDB**: Database
-- **Mongoose**: ODM for MongoDB
-- **TypeScript**: Programming language
-- **JWT**: Authentication
-- **Multer**: File upload handling
-- **Cloudinary**: Cloud storage for media files
+### Core
 
-## 🏗 Project Structure
+- **Runtime**: Node.js
+- **Language**: TypeScript 5.5.4
+- **Framework**: Express.js 4.19.2
+- **Database**: MongoDB with Mongoose 8.5.2
 
-Our backend follows a modular and organized structure to ensure scalability and maintainability:
+### Storage & Media
 
-- **config/**: Contains configuration files for the application, including environment variables, database connections, and third-party service setups.
-- **controllers/**: Houses the logic for handling HTTP requests. Controllers act as an intermediary between the routes and services, processing incoming requests and sending responses.
-- **interfaces/**: Defines TypeScript interfaces used throughout the application, ensuring type safety and code consistency.
-- **middleware/**: Contains Express middleware functions that process requests before they reach the route handlers. This includes authentication checks, error handling, and request parsing.
-- **models/**: Defines the data models and schemas for the application, typically representing database collections or tables.
-- **routes/**: Defines the API endpoints and maps them to the appropriate controller functions. This directory organizes the routing structure of the application.
-- **services/**: Contains the core business logic of the application. Services handle complex operations, data processing, and interactions with external APIs or databases.
-- **utils/**: Hosts utility functions and helper modules that are used across the application, such as data validation, formatting, or custom error classes.
-- **app.ts**: The main entry point of the application, where the Express app is initialized and configured.
+- **Cloud Storage**: CloudFlare R2
+- **Image Processing**: Sharp 0.33.5
+- **Video Processing**: Fluent-ffmpeg
 
-This structure promotes separation of concerns, making the codebase easier to navigate, test, and maintain as the project grows.
+### Authentication & Security
+
+- **JWT**: jsonwebtoken
+- **Encryption**: bcrypt
+- **Security Headers**: helmet
+- **Input Validation**: express-validator
+- **Sanitization**: mongo-sanitize
+
+### Utils & Others
+
+- **Email**: nodemailer
+- **File Upload**: multer
+- **Logging**: morgan
+- **OAuth**: passport, google-auth-library
+
+## ⚙️ Environment Variables
+
+```env
+# Server Settings
+PORT=3000
+BASE_URL=http://localhost:3000
+API_PREFIX=/api/v1
+
+# App Settings
+APP_VERSION=1.0.0
+APP_NAME=MoroStick
+ISSUER=MoroStick
+AUDIENCE=MoroStickUsers
+NODE_ENV=development
+ACCOUNT_RECOVERY_PERIOD=15
+
+# Database Settings
+MONGODB_URL=mongodb://localhost:27017/morostick
+MORGAN=dev
+
+# JWT Settings
+ACCESS_TOKEN_SECRET=your_access_token_secret
+ACCESS_TOKEN_EXPIRES_IN=10m
+REFRESH_TOKEN_SECRET=your_refresh_token_secret
+REFRESH_TOKEN_EXPIRES_IN=30d
+JWT_ALGORITHM=HS256
+
+# Email Settings
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_SECURE=false
+EMAIL_USER=your_email
+EMAIL_PASS=your_email_password
+
+# Rate Limit Settings
+RATE_LIMIT_WINDOW_MS=15
+RATE_LIMIT_MAX=10
+BCRYPT_ROUNDS=10
+
+# OAuth Settings
+GOOGLE_MOBILE_CLIENT_ID=your_google_client_id
+FACEBOOK_MOBILE_APP_ID=your_facebook_app_id
+FACEBOOK_MOBILE_APP_SECRET=your_facebook_app_secret
+
+# OTP Settings
+OTP_EXPIRATION=10
+OTP_LENGTH=6
+OTP_MAX_ATTEMPTS=3
+OTP_ALLOWED_RESEND_INTERVAL=1
+
+# CloudFlare R2 Settings
+CLOUDFLARE_R2_TOKEN_VALUE=your_token
+CLOUDFLARE_R2_ACCESS_KEY_ID=your_access_key
+CLOUDFLARE_R2_SECRET_ACCESS_KEY=your_secret_key
+CLOUDFLARE_R2_BUCKET_NAME=your_bucket
+CLOUDFLARE_R2_ENDPOINT=your_endpoint
+CLOUDFLARE_R2_PUBLIC_URL=your_public_url
+```
 
 ## 🚦 Getting Started
 
 1. **Clone the repository**
-   git clone https://github.com/badrkarrachai/WanaShip-Backend.git
+
+```bash
+git clone https://github.com/yourusername/morostick-backend.git
+cd morostick-backend
+```
 
 2. **Install dependencies**
-   cd WanaShip-Backend
-   npm install
+
+```bash
+npm install
+```
 
 3. **Set up environment variables**
-   Create a `.env` file in the root directory and add the following:
 
-- PORT: `3000`
-- BASE_URL: `http://localhost:3000`
-- API_PREFIX: `/wanaship/dev`
-- APP_VERSION: `1.0.0`
-- APP_NAME: `WanaShip`
-- ISSUER: `B&H`
-- AUDIENCE: `WanaShipUsers`
-- MONGODB_URL: `mongodb://localhost:27017/wanaship_db`
-- MORGAN: `dev`
-- NODE_ENV: `development`
-- ACCESS_TOKEN_SECRET: `YOUR_JWT_ACCESS_TOKEN_SECRET`
-- REFRESH_TOKEN_SECRET: `YOUR_JWT_REFRESH_TOKEN_SECRET`
-- ACCESS_TOKEN_EXPIRES_IN: `10 (10 minutes)`
-- REFRESH_TOKEN_EXPIRES_IN `30 (30 days)`
-- OTP_EXPIRATION: `10 (10 minutes)`
-- EMAIL_HOST: `smtp.gmail.com`
-- EMAIL_PORT: `587`
-- EMAIL_SECURE: `false`
-- EMAIL_USER: `YOUR_EMAIL`
-- EMAIL_PASS: `YOUR_EMAIL_PASSWORD`
-- RATE_LIMIT_WINDOW_MS: `15`
-- RATE_LIMIT_MAX: `10`
-- BCRYPT_ROUNDS: `10`
-- ACCOUNT_RECOVERY_PERIOD: `15 (15 days)`
-- GOOGLE_CLIENT_ID: `YOUR_GOOGLE_CLIENT_ID`
-- GOOGLE_CLIENT_SECRET: `YOUR_GOOGLE_CLIENT_SECRET`
-- DISCORD_CLIENT_ID: `YOUR_DISCORD_CLIENT_ID`
-- DISCORD_CLIENT_SECRET: `YOUR_DISCORD_CLIENT_SECRET`
+- Copy `.env.example` to `.env`
+- Fill in all required variables
 
-4. **Run the application**
-   npm run dev
+4. **Start development server**
 
-## 📚 API Documentation
+```bash
+npm run dev
+```
 
-(Include links to your API documentation or describe key endpoints here)
+5. **Build for production**
+
+```bash
+npm run build
+```
+
+## 📚 API Endpoints
+
+### Authentication
+
+```
+POST /api/v1/auth/register - Register new user
+POST /api/v1/auth/login - Login user
+POST /api/v1/auth/refresh - Refresh access token
+POST /api/v1/auth/google - Google OAuth login
+POST /api/v1/auth/facebook - Facebook OAuth login
+```
+
+### Sticker Packs
+
+```
+POST /api/v1/packs - Create new pack
+GET /api/v1/packs - List all packs
+GET /api/v1/packs/:id - Get pack details
+PUT /api/v1/packs/:id - Update pack
+DELETE /api/v1/packs/:id - Delete pack
+```
+
+### Stickers
+
+```
+POST /api/v1/packs/:id/stickers - Add sticker to pack
+DELETE /api/v1/packs/:id/stickers/:stickerId - Remove sticker
+PUT /api/v1/packs/:id/stickers/:stickerId - Update sticker
+```
+
+## 🔒 Security Features
+
+- JWT token authentication
+- Request rate limiting
+- Input sanitization
+- MongoDB injection prevention
+- Security headers with Helmet
+- CORS configuration
+- Password hashing
+- OTP verification
 
 ## 🧪 Testing
 
-Run the test suite with:
+```bash
+# Run all tests
 npm test
+
+# Run specific test suite
+npm test -- --grep "Auth"
+```
 
 ## 🤝 Contributing
 
-Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/badrkarrachai/WanaShip-Backend/issues).
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
 ## 📝 License
 
-This project is [MIT](LICENSE) licensed.
+This project is [ISC](LICENSE) licensed.
 
 ## 👨‍💻 Author
 
@@ -116,4 +233,4 @@ This project is [MIT](LICENSE) licensed.
 
 ---
 
-Made with ❤️ for WanaShip
+Made with ❤️ for MoroStick
