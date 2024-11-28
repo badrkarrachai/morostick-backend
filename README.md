@@ -1,6 +1,8 @@
 # MoroStick Backend
 
-A robust backend service for WhatsApp sticker creation and management, built with Express.js and TypeScript.
+![MoroStick GitHub Repo](https://github.com/user-attachments/assets/a89e8a57-a90c-46d5-bfd3-0534eef3c0dd)
+
+A robust backend service for WhatsApp sticker creation and management, built with Express.js and TypeScript, to serve the mobile app.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5.4-blue.svg)](https://www.typescriptlang.org/)
 [![Express](https://img.shields.io/badge/Express-4.19.2-lightgrey.svg)](https://expressjs.com/)
