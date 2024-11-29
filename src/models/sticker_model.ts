@@ -1,8 +1,6 @@
 import mongoose, { Schema } from "mongoose";
-import {
-  ISticker,
-  GENERAL_REQUIREMENTS,
-} from "../interfaces/sticker_interface";
+import { ISticker } from "../interfaces/sticker_interface";
+import { STICKER_REQUIREMENTS } from "../config/app_requirement";
 
 const StickerSchema = new Schema<ISticker>(
   {
@@ -21,8 +19,9 @@ const StickerSchema = new Schema<ISticker>(
     emojis: {
       type: [String],
       validate: {
-        validator: (emojis: string[]) => emojis.length <= 3,
-        message: "Maximum 3 emojis allowed per sticker",
+        validator: (emojis: string[]) =>
+          emojis.length <= STICKER_REQUIREMENTS.maxEmojis,
+        message: `Maximum ${STICKER_REQUIREMENTS.maxEmojis} emojis allowed per sticker`,
       },
     },
     thumbnailUrl: {
@@ -32,6 +31,14 @@ const StickerSchema = new Schema<ISticker>(
     webpUrl: {
       type: String,
       required: true,
+    },
+    tags: {
+      type: [String],
+      validate: {
+        validator: (tags: string[]) =>
+          tags.length <= STICKER_REQUIREMENTS.maxTags,
+        message: `Maximum ${STICKER_REQUIREMENTS.maxTags} tags allowed per sticker`,
+      },
     },
     isAnimated: {
       type: Boolean,
@@ -44,8 +51,8 @@ const StickerSchema = new Schema<ISticker>(
       validate: {
         validator: function (size: number) {
           return this.isAnimated
-            ? size <= GENERAL_REQUIREMENTS.animatedMaxFileSize
-            : size <= GENERAL_REQUIREMENTS.maxFileSize;
+            ? size <= STICKER_REQUIREMENTS.animatedMaxFileSize
+            : size <= STICKER_REQUIREMENTS.maxFileSize;
         },
         message: "File size exceeds maximum allowed limit",
       },
@@ -56,9 +63,9 @@ const StickerSchema = new Schema<ISticker>(
         required: true,
         validate: {
           validator: (width: number) =>
-            width >= GENERAL_REQUIREMENTS.dimensions.minWidth &&
-            width <= GENERAL_REQUIREMENTS.dimensions.maxWidth,
-          message: `Width must be between ${GENERAL_REQUIREMENTS.dimensions.minWidth} and ${GENERAL_REQUIREMENTS.dimensions.maxWidth} pixels`,
+            width >= STICKER_REQUIREMENTS.dimensions.minWidth &&
+            width <= STICKER_REQUIREMENTS.dimensions.maxWidth,
+          message: `Width must be between ${STICKER_REQUIREMENTS.dimensions.minWidth} and ${STICKER_REQUIREMENTS.dimensions.maxWidth} pixels`,
         },
       },
       height: {
@@ -66,17 +73,17 @@ const StickerSchema = new Schema<ISticker>(
         required: true,
         validate: {
           validator: (height: number) =>
-            height >= GENERAL_REQUIREMENTS.dimensions.minHeight &&
-            height <= GENERAL_REQUIREMENTS.dimensions.maxHeight,
-          message: `Height must be between ${GENERAL_REQUIREMENTS.dimensions.minHeight} and ${GENERAL_REQUIREMENTS.dimensions.maxHeight} pixels`,
+            height >= STICKER_REQUIREMENTS.dimensions.minHeight &&
+            height <= STICKER_REQUIREMENTS.dimensions.maxHeight,
+          message: `Height must be between ${STICKER_REQUIREMENTS.dimensions.minHeight} and ${STICKER_REQUIREMENTS.dimensions.maxHeight} pixels`,
         },
       },
     },
     format: {
       type: String,
       enum: {
-        values: GENERAL_REQUIREMENTS.allowedFormats,
-        message: `Format must be one of: ${GENERAL_REQUIREMENTS.allowedFormats.join(
+        values: STICKER_REQUIREMENTS.allowedFormats,
+        message: `Format must be one of: ${STICKER_REQUIREMENTS.allowedFormats.join(
           ", "
         )}`,
       },

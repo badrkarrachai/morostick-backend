@@ -5,15 +5,15 @@ import {
   sendErrorResponse,
 } from "../../../utils/response_handler_util";
 import { validateRequest } from "../../../utils/validations_util";
-import { PACK_REQUIREMENTS } from "../../../interfaces/pack_interface";
 import { IPackPreview } from "../../../interfaces/pack_interface";
 import { body, param } from "express-validator";
 import { PackPreviewFormatter } from "../../../utils/responces_templates/pack_response_template";
+import { PACK_REQUIREMENTS } from "../../../config/app_requirement";
 
 export const updatePack = async (req: Request, res: Response) => {
   const userId = req.user.id;
   const { packId } = req.params;
-  const { name, description, tags, isAnimatedPack, isPrivate } = req.body;
+  const { name, description, isAnimatedPack, isPrivate } = req.body;
 
   try {
     // Validate request
@@ -83,7 +83,6 @@ export const updatePack = async (req: Request, res: Response) => {
     // Update pack fields
     if (name) pack.name = name.trim();
     if (description !== undefined) pack.description = description.trim();
-    if (tags) pack.tags = tags.slice(0, PACK_REQUIREMENTS.maxTags);
     if (isPrivate !== undefined) pack.isPrivate = isPrivate;
     if (isAnimatedPack !== undefined) pack.isAnimatedPack = isAnimatedPack;
 
@@ -136,12 +135,6 @@ export const updatePackValidationRules = [
     .withMessage(
       `Description cannot exceed ${PACK_REQUIREMENTS.descriptionMaxLength} characters`
     ),
-  body("tags")
-    .optional()
-    .isArray()
-    .withMessage("Tags must be an array")
-    .custom((tags) => tags.length <= PACK_REQUIREMENTS.maxTags)
-    .withMessage(`Maximum ${PACK_REQUIREMENTS.maxTags} tags allowed`),
   body("isAnimatedPack")
     .optional()
     .isBoolean()

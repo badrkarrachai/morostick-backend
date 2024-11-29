@@ -11,7 +11,7 @@ import fs from "fs/promises";
 import os from "os";
 import { AllowedFileFormat, mimeTypeToFormat } from "../types/storage.types";
 import config from "../config";
-import { PLATFORM_CONFIGS } from "../interfaces/platform_config_interface";
+import { PLATFORM_CONFIGS } from "../config/app_requirement";
 
 // Initialize S3 client for Cloudflare R2
 const s3Client = new S3Client({

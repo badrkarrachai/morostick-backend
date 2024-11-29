@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import multer from "multer";
 import sharp from "sharp";
 import { sendErrorResponse } from "../../utils/response_handler_util";
-import { GENERAL_REQUIREMENTS } from "../../interfaces/sticker_interface";
+import { STICKER_REQUIREMENTS } from "../../config/app_requirement";
 
 // Map file extensions to MIME types
 const MIME_TYPES = {
@@ -21,19 +21,19 @@ const upload = multer({
   storage,
   limits: {
     fileSize: Math.max(
-      GENERAL_REQUIREMENTS.maxFileSize,
-      GENERAL_REQUIREMENTS.animatedMaxFileSize
+      STICKER_REQUIREMENTS.maxFileSize,
+      STICKER_REQUIREMENTS.animatedMaxFileSize
     ),
   },
   fileFilter: (req, file, cb) => {
     // Convert mime type to extension
     const fileType = file.mimetype.split("/")[1];
-    const isValidType = GENERAL_REQUIREMENTS.allowedFormats.includes(fileType);
+    const isValidType = STICKER_REQUIREMENTS.allowedFormats.includes(fileType);
 
     if (!isValidType) {
       cb(
         new Error(
-          `Invalid file type. Allowed formats: ${GENERAL_REQUIREMENTS.allowedFormats.join(
+          `Invalid file type. Allowed formats: ${STICKER_REQUIREMENTS.allowedFormats.join(
             ", "
           )}`
         )
@@ -96,8 +96,8 @@ export const uploadStickerFile = async (
 
         // Validate file size based on animation type
         const maxSize = isAnimated
-          ? GENERAL_REQUIREMENTS.animatedMaxFileSize
-          : GENERAL_REQUIREMENTS.maxFileSize;
+          ? STICKER_REQUIREMENTS.animatedMaxFileSize
+          : STICKER_REQUIREMENTS.maxFileSize;
 
         if (req.file.size > maxSize) {
           return sendErrorResponse({
@@ -165,7 +165,7 @@ function validateDimensions(
   width: number,
   height: number
 ): { isValid: boolean; error?: string } {
-  const { dimensions } = GENERAL_REQUIREMENTS;
+  const { dimensions } = STICKER_REQUIREMENTS;
 
   if (width < dimensions.minWidth || height < dimensions.minHeight) {
     return {

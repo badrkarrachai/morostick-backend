@@ -7,12 +7,14 @@ import {
 } from "../../../utils/response_handler_util";
 import { validateRequest } from "../../../utils/validations_util";
 import { body, param } from "express-validator";
-import { GENERAL_REQUIREMENTS } from "../../../interfaces/sticker_interface";
 import { uploadToStorage } from "../../../utils/storage_util";
 import { ISticker } from "../../../interfaces/sticker_interface";
 import multer from "multer";
-import { PACK_REQUIREMENTS } from "../../../interfaces/pack_interface";
 import sharp from "sharp";
+import {
+  STICKER_REQUIREMENTS,
+  PACK_REQUIREMENTS,
+} from "../../../config/app_requirement";
 
 export const uploadStickerValidationRules = [
   param("packId").isMongoId().withMessage("Invalid pack ID"),
@@ -35,7 +37,9 @@ export const uploadSticker = async (req: Request, res: Response) => {
     const { packId } = req.params;
     const { name } = req.body;
     let emojis;
+    let tags;
 
+    // Validate emojis
     try {
       emojis = Array.isArray(req.body.emojis)
         ? req.body.emojis
@@ -49,6 +53,25 @@ export const uploadSticker = async (req: Request, res: Response) => {
         res,
         message: "Invalid emojis format",
         errorCode: "INVALID_EMOJIS",
+        errorDetails: error.message,
+        status: 400,
+      });
+    }
+
+    // Validate tags
+    try {
+      tags = Array.isArray(req.body.tags)
+        ? req.body.tags
+        : JSON.parse(req.body.tags);
+
+      if (!Array.isArray(tags) || tags.length > STICKER_REQUIREMENTS.maxTags) {
+        throw new Error("Invalid tags format or too many tags");
+      }
+    } catch (error) {
+      return sendErrorResponse({
+        res,
+        message: "Invalid tags format",
+        errorCode: "INVALID_TAGS",
         errorDetails: error.message,
         status: 400,
       });
@@ -180,6 +203,11 @@ export const uploadSticker = async (req: Request, res: Response) => {
       });
     }
 
+    // Sanitize and validate tags
+    const sanitizedTags = tags
+      ? tags.slice(0, STICKER_REQUIREMENTS.maxTags)
+      : [];
+
     // Check if the sticker pack has a tray icon if not use the sticker webp image
     if (!pack.trayIcon) {
       pack.trayIcon = uploadResult.url;
@@ -193,6 +221,7 @@ export const uploadSticker = async (req: Request, res: Response) => {
       emojis: emojis,
       thumbnailUrl: uploadResult.url,
       webpUrl: uploadResult.url,
+      tags: sanitizedTags,
       isAnimated: uploadResult.isAnimated,
       fileSize: uploadResult.fileSize,
       dimensions: {
@@ -234,8 +263,8 @@ export const upload = multer({
   storage,
   limits: {
     fileSize: Math.max(
-      GENERAL_REQUIREMENTS.maxFileSize,
-      GENERAL_REQUIREMENTS.animatedMaxFileSize
+      STICKER_REQUIREMENTS.maxFileSize,
+      STICKER_REQUIREMENTS.animatedMaxFileSize
     ),
   },
   fileFilter: (_req, file, cb) => {

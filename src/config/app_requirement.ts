@@ -1,3 +1,24 @@
+// Pack requirement
+export const PACK_REQUIREMENTS = {
+  maxStickers: 30,
+  maxPreviewStickers: 5,
+  nameMaxLength: 32,
+  descriptionMaxLength: 512,
+};
+// Sticker-specific constants
+export const STICKER_REQUIREMENTS = {
+  maxFileSize: 5 * 1024 * 1024, // 5MB for static files
+  animatedMaxFileSize: 10 * 1024 * 1024, // 10MB for animated files
+  dimensions: {
+    maxWidth: 2048,
+    maxHeight: 2048,
+    minWidth: 100,
+    minHeight: 100,
+  },
+  maxTags: 100,
+  maxEmojis: 3,
+  allowedFormats: ["webp", "png", "jpeg", "jpg", "gif"],
+};
 // Platform-specific sticker requirements
 export const PLATFORM_CONFIGS = {
   whatsapp: {

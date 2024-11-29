@@ -9,6 +9,9 @@ import { updatePack } from "../../controllers/sticker_controllers/packes/update_
 import getTrendingPacks, {
   getTrendingPacksValidationRules,
 } from "../../controllers/sticker_controllers/packes/search_pack_controllers/get_trending_packs_controller";
+import searchPacks, {
+  searchPacksValidationRules,
+} from "../../controllers/sticker_controllers/packes/search_pack_controllers/search_packs_controller";
 
 const router = Router();
 
@@ -22,5 +25,6 @@ router.post("/update/:packId", auth, checkAD, updatePack);
 
 // Search packs route
 router.get("/get/trending", getTrendingPacksValidationRules, getTrendingPacks);
+router.get("/get/search", searchPacksValidationRules, searchPacks);
 
 export default router;

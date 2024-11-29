@@ -5,9 +5,9 @@ import {
   IPackPreview,
   IStickerPack,
   IStickerPackPreview,
-  PACK_REQUIREMENTS,
 } from "../../interfaces/pack_interface";
 import { ISticker } from "../../interfaces/sticker_interface";
+import { PACK_REQUIREMENTS } from "../../config/app_requirement";
 
 export class PackPreviewFormatter {
   static toStickerPreview(sticker: Partial<ISticker>): IStickerPackPreview {

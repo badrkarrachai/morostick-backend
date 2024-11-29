@@ -1,18 +1,5 @@
 import { Document, Types } from "mongoose";
 
-// Sticker-specific constants
-export const GENERAL_REQUIREMENTS = {
-  maxFileSize: 5 * 1024 * 1024, // 5MB for static files
-  animatedMaxFileSize: 10 * 1024 * 1024, // 10MB for animated files
-  dimensions: {
-    maxWidth: 2048,
-    maxHeight: 2048,
-    minWidth: 100,
-    minHeight: 100,
-  },
-  allowedFormats: ["webp", "png", "jpeg", "jpg", "gif"],
-};
-
 // ISticker perview interface
 export interface IStickerPreview {
   _id: Types.ObjectId;
@@ -50,6 +37,7 @@ export interface ISticker extends Document {
   emojis: string[];
   thumbnailUrl: string;
   webpUrl: string;
+  tags: string[];
   isAnimated: boolean;
   fileSize: number;
   dimensions: {

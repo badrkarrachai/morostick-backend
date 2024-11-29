@@ -3,10 +3,9 @@ import {
   IStickerPack,
   IStickerPackMethods,
   IStickerPackModel,
-  IPackPreview,
-  PACK_REQUIREMENTS,
 } from "../interfaces/pack_interface";
 import { ISticker, IStickerPreview } from "../interfaces/sticker_interface";
+import { PACK_REQUIREMENTS } from "../config/app_requirement";
 
 const StatsSchema = new Schema(
   {
@@ -54,13 +53,6 @@ const StickerPackSchema = new Schema<
       index: true,
     },
     stickers: [{ type: Schema.Types.ObjectId, ref: "Sticker" }],
-    tags: {
-      type: [String],
-      validate: {
-        validator: (tags: string[]) => tags.length <= PACK_REQUIREMENTS.maxTags,
-        message: `Maximum ${PACK_REQUIREMENTS.maxTags} tags allowed`,
-      },
-    },
     isPrivate: {
       type: Boolean,
       default: false,

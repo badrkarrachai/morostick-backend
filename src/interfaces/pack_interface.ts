@@ -1,22 +1,12 @@
 import { Document, Model, Types } from "mongoose";
 import { ICreator, IStats } from "./sticker_interface";
 
-// Constants
-export const PACK_REQUIREMENTS = {
-  maxStickers: 30,
-  maxPreviewStickers: 5,
-  nameMaxLength: 32,
-  descriptionMaxLength: 512,
-  maxTags: 10,
-};
-
 export interface IBasePack {
   name: string;
   description?: string;
   trayIcon?: string;
   creator: ICreator;
   stickers: Types.ObjectId[];
-  tags: string[];
   isPrivate: boolean;
   isAuthorized: boolean;
   isAnimatedPack: boolean;

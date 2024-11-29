@@ -5,19 +5,19 @@ import {
   sendErrorResponse,
 } from "../../../utils/response_handler_util";
 import { validateRequest } from "../../../utils/validations_util";
-import { PACK_REQUIREMENTS } from "../../../interfaces/pack_interface";
 import { IPackPreview } from "../../../interfaces/pack_interface";
 import { body } from "express-validator";
 import User from "../../../models/users_model";
 import { IUser } from "../../../interfaces/user_interface";
 import { IImages } from "../../../interfaces/image_interface";
 import { PackPreviewFormatter } from "../../../utils/responces_templates/pack_response_template";
+import { PACK_REQUIREMENTS } from "../../../config/app_requirement";
 
 // Add type for authenticated request
 
 export const createPack = async (req: Request, res: Response) => {
   const userId = req.user.id;
-  const { name, description, tags, isAnimatedPack, isPrivate } = req.body;
+  const { name, description, isAnimatedPack, isPrivate } = req.body;
 
   try {
     // Validate request
@@ -38,9 +38,6 @@ export const createPack = async (req: Request, res: Response) => {
         status: 400,
       });
     }
-
-    // Sanitize and validate tags
-    const sanitizedTags = tags ? tags.slice(0, PACK_REQUIREMENTS.maxTags) : [];
 
     // Find user and populate avatar
     const user = await User.findById(userId).populate<{ avatar: IImages }>(
@@ -66,7 +63,6 @@ export const createPack = async (req: Request, res: Response) => {
         username: user.name,
         avatarUrl: user.avatar?.url || undefined,
       },
-      tags: sanitizedTags,
       stickers: [],
       isPrivate: isPrivate,
       isAnimatedPack: isAnimatedPack,
@@ -129,12 +125,6 @@ export const createPackValidationRules = [
     .withMessage(
       `Description cannot exceed ${PACK_REQUIREMENTS.descriptionMaxLength} characters`
     ),
-  body("tags")
-    .optional()
-    .isArray()
-    .withMessage("Tags must be an array")
-    .custom((tags) => tags.length <= PACK_REQUIREMENTS.maxTags)
-    .withMessage(`Maximum ${PACK_REQUIREMENTS.maxTags} tags allowed`),
   body("isAnimatedPack")
     .optional()
     .isBoolean()

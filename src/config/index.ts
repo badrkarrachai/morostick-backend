@@ -1,5 +1,4 @@
 import dotenv from "dotenv";
-import e from "express";
 
 const envFound = dotenv.config();
 
