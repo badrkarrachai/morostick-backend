@@ -89,6 +89,11 @@ const StickerSchema = new Schema<ISticker>(
       },
       required: true,
     },
+    position: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
   },
   {
     timestamps: true,

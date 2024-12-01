@@ -76,6 +76,13 @@ export const createPack = async (req: Request, res: Response) => {
     // Save the pack
     await pack.save();
 
+    // Add pack to the user
+    await User.findByIdAndUpdate(userId, {
+      $push: {
+        packs: pack.id,
+      },
+    });
+
     return sendSuccessResponse<IPackPreview>({
       res,
       status: 201,

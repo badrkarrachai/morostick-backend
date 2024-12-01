@@ -11,12 +11,21 @@ import { query } from "express-validator";
 import { Types, PipelineStage } from "mongoose";
 import { IPackPreview } from "../../../../interfaces/pack_interface";
 import { PackPreviewFormatter } from "../../../../utils/responces_templates/pack_response_template";
+import { PACK_REQUIREMENTS } from "../../../../config/app_requirement";
 
 export const searchPacksValidationRules = [
   query("q").optional().isString().trim(),
   query("creator").optional().isString().trim(),
   query("animated").optional().isBoolean(),
   query("tags").optional().isString(),
+  query("timeRange")
+    .optional()
+    .isIn(["today", "week", "month", "year", "all"])
+    .withMessage("Invalid time range"),
+  query("sortBy")
+    .optional()
+    .isIn(["relevance", "popular", "recent"])
+    .withMessage("Invalid sort parameter"),
   query("limit")
     .optional()
     .isInt({ min: 1, max: 50 })
@@ -25,22 +34,69 @@ export const searchPacksValidationRules = [
     .optional()
     .isInt({ min: 1 })
     .withMessage("Page must be greater than 0"),
-  query("searchBy")
-    .optional()
-    .isIn(["all", "name", "description", "creator", "tags"])
-    .withMessage("Invalid search parameter"),
 ];
 
-interface SearchQuery {
-  isAuthorized: boolean;
-  isPrivate?: boolean;
-  isAnimatedPack?: boolean;
-  $or?: Array<{
-    [key: string]: any;
-  }>;
-  $text?: { $search: string };
-  "creator._id"?: Types.ObjectId | { $in: Types.ObjectId[] };
-}
+const getTimeRangeFilter = (timeRange: string): Date | null => {
+  const now = new Date();
+  switch (timeRange) {
+    case "today":
+      return new Date(now.setHours(0, 0, 0, 0));
+    case "week":
+      return new Date(now.setDate(now.getDate() - 7));
+    case "month":
+      return new Date(now.setMonth(now.getMonth() - 1));
+    case "year":
+      return new Date(now.setFullYear(now.getFullYear() - 1));
+    default:
+      return null;
+  }
+};
+
+const calculateRelevanceScore = (): PipelineStage => ({
+  $addFields: {
+    relevanceScore: {
+      $add: [
+        // Popularity factors
+        { $multiply: [{ $ifNull: ["$stats.downloads", 0] }, 10] },
+        { $multiply: [{ $ifNull: ["$stats.views", 0] }, 5] },
+        { $multiply: [{ $ifNull: ["$stats.favorites", 0] }, 15] },
+
+        // Time decay factor
+        {
+          $multiply: [
+            {
+              $divide: [
+                1,
+                {
+                  $add: [
+                    {
+                      $divide: [
+                        { $subtract: [new Date(), "$createdAt"] },
+                        86400000,
+                      ],
+                    },
+                    1,
+                  ],
+                },
+              ],
+            },
+            100,
+          ],
+        },
+
+        // Sticker count factor
+        {
+          $multiply: [{ $size: "$stickers" }, 5],
+        },
+
+        // Matching stickers boost
+        {
+          $multiply: [{ $size: "$matchedStickers" }, 20],
+        },
+      ],
+    },
+  },
+});
 
 export const searchPacks = async (req: Request, res: Response) => {
   try {
@@ -68,38 +124,44 @@ export const searchPacks = async (req: Request, res: Response) => {
       creator,
       animated,
       tags,
+      timeRange = "all",
+      sortBy = "relevance",
       limit = 20,
       page = 1,
-      searchBy = "all",
     } = req.query;
 
     const skip = (Number(page) - 1) * Number(limit);
     const userId = req.user?.id;
 
-    // Build base query
-    const baseQuery: SearchQuery = {
+    // Base query with improved visibility handling
+    const baseQuery: any = {
       isAuthorized: true,
+      $and: [
+        userId
+          ? {
+              $or: [
+                { isPrivate: false },
+                { "creator._id": new Types.ObjectId(userId) },
+              ],
+            }
+          : { isPrivate: false },
+      ],
     };
 
-    // Handle private packs visibility
-    if (userId) {
-      baseQuery.$or = [
-        { isPrivate: false },
-        { "creator._id": new Types.ObjectId(userId) },
-      ];
-    } else {
-      baseQuery.isPrivate = false;
-    }
-
-    // Add animation filter if specified
+    // Add animation filter
     if (animated !== undefined) {
       baseQuery.isAnimatedPack = animated === "true";
     }
 
+    // Add time range filter
+    const timeFilter = getTimeRangeFilter(timeRange as string);
+    if (timeFilter) {
+      baseQuery.createdAt = { $gte: timeFilter };
+    }
+
     // Handle creator search
     if (creator && typeof creator === "string") {
-      // First, find the user by name, email, or social media handles
-      const userQuery = {
+      const users = await User.find({
         isDeleted: false,
         isActivated: true,
         $or: [
@@ -111,60 +173,36 @@ export const searchPacks = async (req: Request, res: Response) => {
             "socialMedia.instagram": { $regex: creator.trim(), $options: "i" },
           },
         ],
-      };
+      }).select("_id");
 
-      const users = await User.find(userQuery).select("_id");
-      const userIds = users.map((user) => user._id);
-
-      if (userIds.length > 0) {
-        (baseQuery as any)["creator._id"] = { $in: userIds };
+      if (users.length > 0) {
+        baseQuery["creator._id"] = { $in: users.map((user) => user._id) };
       } else {
-        // If no users found, ensure no results are returned
         baseQuery["creator._id"] = new Types.ObjectId(
           "000000000000000000000000"
         );
       }
     }
 
-    // Build search conditions based on searchBy parameter and query
-    if (q) {
-      const searchQuery = typeof q === "string" ? q : q[0];
-      switch (searchBy) {
-        case "name":
-          baseQuery.$or = [{ name: { $regex: searchQuery, $options: "i" } }];
-          break;
-        case "description":
-          baseQuery.$or = [
-            { description: { $regex: searchQuery, $options: "i" } },
-          ];
-          break;
-        case "creator":
-          // This will be handled by the creator search above
-          break;
-        case "tags":
-          // Handled in aggregation pipeline
-          break;
-        case "all":
-        default:
-          baseQuery.$text = { $search: searchQuery };
-          break;
-      }
-    }
-
-    // Split tags into array if provided
-    const tagArray =
-      typeof tags === "string" ? tags.split(",").map((tag) => tag.trim()) : [];
-
     // Build aggregation pipeline
     const aggregationPipeline: PipelineStage[] = [
-      {
-        $match: baseQuery,
-      },
+      // Initial match to filter authorized and private packs
+      { $match: baseQuery },
     ];
 
-    // Add tag search if specified
-    if (tagArray.length > 0) {
+    // Add sticker lookup for searching tags and emojis
+    if (q || tags) {
+      const searchQuery = typeof q === "string" ? q.trim() : "";
+      const tagArray =
+        typeof tags === "string"
+          ? tags
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter((tag) => tag.length > 0)
+          : [];
+
       aggregationPipeline.push(
+        // Lookup all stickers for the pack
         {
           $lookup: {
             from: "stickers",
@@ -173,22 +211,75 @@ export const searchPacks = async (req: Request, res: Response) => {
               {
                 $match: {
                   $expr: { $in: ["$_id", "$$packStickers"] },
-                  tags: { $in: tagArray },
+                  ...(searchQuery && {
+                    $or: [
+                      { name: { $regex: searchQuery, $options: "i" } },
+                      { tags: { $regex: searchQuery, $options: "i" } },
+                      { emojis: { $regex: searchQuery, $options: "i" } },
+                    ],
+                  }),
+                  ...(tagArray.length > 0 && {
+                    tags: { $in: tagArray },
+                  }),
                 },
               },
             ],
             as: "matchedStickers",
           },
-        },
-        {
+        }
+      );
+
+      // If there's a search query, match packs with either matching stickers or pack details
+      if (searchQuery) {
+        aggregationPipeline.push({
+          $match: {
+            $or: [
+              { name: { $regex: searchQuery, $options: "i" } },
+              { description: { $regex: searchQuery, $options: "i" } },
+              { "creator.username": { $regex: searchQuery, $options: "i" } },
+              { matchedStickers: { $ne: [] } },
+            ],
+          },
+        });
+      }
+
+      // If there are tags, ensure we have matching stickers
+      if (tagArray.length > 0) {
+        aggregationPipeline.push({
           $match: {
             matchedStickers: { $ne: [] },
           },
-        }
-      );
+        });
+      }
     }
 
-    // Add preview stickers and creator info lookup
+    // Add relevance scoring
+    aggregationPipeline.push(calculateRelevanceScore());
+
+    // Add sorting based on user preference
+    switch (sortBy) {
+      case "popular":
+        aggregationPipeline.push({
+          $sort: {
+            "stats.downloads": -1,
+            "stats.favorites": -1,
+            "stats.views": -1,
+          },
+        });
+        break;
+      case "recent":
+        aggregationPipeline.push({
+          $sort: { createdAt: -1 },
+        });
+        break;
+      case "relevance":
+      default:
+        aggregationPipeline.push({
+          $sort: { relevanceScore: -1 },
+        });
+    }
+
+    // Add preview stickers lookup
     aggregationPipeline.push(
       {
         $lookup: {
@@ -201,39 +292,35 @@ export const searchPacks = async (req: Request, res: Response) => {
               },
             },
             {
-              $limit: 4,
+              $set: {
+                _id: "$_id", // Ensure _id is preserved
+              },
+            },
+            {
+              $sort: { position: 1 },
+            },
+            {
+              $limit: PACK_REQUIREMENTS.maxPreviewStickers,
             },
           ],
           as: "previewStickers",
         },
       },
-      {
-        $sort: {
-          createdAt: -1,
-        },
-      },
-      {
-        $skip: skip,
-      },
-      {
-        $limit: Number(limit),
-      }
+      { $skip: skip },
+      { $limit: Number(limit) }
     );
 
-    // Execute count and search in parallel
+    // Execute search
     const [totalCount, packs] = await Promise.all([
       StickerPack.countDocuments(baseQuery),
       StickerPack.aggregate(aggregationPipeline),
     ]);
 
-    // Format the results
     const formattedPacks = packs.map((pack) =>
       PackPreviewFormatter.toPackPreview(pack)
     );
 
     const totalPages = Math.ceil(totalCount / Number(limit));
-    const hasNextPage = Number(page) < totalPages;
-    const hasPrevPage = Number(page) > 1;
 
     return sendSuccessResponse<IPackPreview[]>({
       res,
@@ -244,8 +331,8 @@ export const searchPacks = async (req: Request, res: Response) => {
         pageSize: Number(limit),
         totalPages,
         totalItems: totalCount,
-        hasNextPage,
-        hasPrevPage,
+        hasNextPage: Number(page) < totalPages,
+        hasPrevPage: Number(page) > 1,
       },
     });
   } catch (error) {

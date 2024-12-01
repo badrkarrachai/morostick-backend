@@ -55,6 +55,11 @@ const userSchema = new Schema<IUser>(
     accessToken: { type: String },
     refreshToken: { type: String },
     tokenExpiresAt: { type: Date },
+    // Sticker and Packs
+    stickers: [{ type: Types.ObjectId, ref: "Sticker" }],
+    packs: [{ type: Types.ObjectId, ref: "StickerPack" }],
+    favoritesPacks: [{ type: Types.ObjectId, ref: "StickerPack" }],
+    favoritesStickers: [{ type: Types.ObjectId, ref: "Sticker" }],
   },
   {
     timestamps: true,

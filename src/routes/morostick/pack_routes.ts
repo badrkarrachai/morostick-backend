@@ -12,6 +12,15 @@ import getTrendingPacks, {
 import searchPacks, {
   searchPacksValidationRules,
 } from "../../controllers/sticker_controllers/packes/search_pack_controllers/search_packs_controller";
+import {
+  moveSticker,
+  moveStickerValidationRules,
+  reorderStickers,
+  reorderStickersValidationRules,
+} from "../../controllers/sticker_controllers/packes/reorder_stickers_controller";
+import getUserPrivatePacks, {
+  getUserPrivatePacksValidationRules,
+} from "../../controllers/sticker_controllers/packes/search_pack_controllers/get_user_packs";
 
 const router = Router();
 
@@ -26,5 +35,27 @@ router.post("/update/:packId", auth, checkAD, updatePack);
 // Search packs route
 router.get("/get/trending", getTrendingPacksValidationRules, getTrendingPacks);
 router.get("/get/search", searchPacksValidationRules, searchPacks);
+router.get(
+  "/get/my-packs",
+  auth,
+  getUserPrivatePacksValidationRules,
+  getUserPrivatePacks
+);
+
+// Reorder stickers route
+router.post(
+  "/reorder/:packId",
+  auth,
+  checkAD,
+  reorderStickersValidationRules,
+  reorderStickers
+);
+router.post(
+  "/move-sticker/:packId",
+  auth,
+  checkAD,
+  moveStickerValidationRules,
+  moveSticker
+);
 
 export default router;

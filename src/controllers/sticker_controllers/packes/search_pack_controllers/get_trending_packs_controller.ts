@@ -153,6 +153,7 @@ export const getTrendingPacks = async (req: Request, res: Response) => {
                 thumbnailUrl: 1,
                 fileSize: 1,
                 dimensions: 1,
+                position: 1,
                 createdAt: 1,
                 updatedAt: 1,
               },

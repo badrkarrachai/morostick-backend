@@ -13,6 +13,7 @@ export interface IStickerPreview {
     width: number;
     height: number;
   };
+  position: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,6 +46,7 @@ export interface ISticker extends Document {
     height: number;
   };
   format: "webp" | "png";
+  position: number;
   createdAt: Date;
   updatedAt: Date;
 }

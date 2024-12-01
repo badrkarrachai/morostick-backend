@@ -8,6 +8,7 @@ import {
 import { validateRequest } from "../../../utils/validations_util";
 import { param } from "express-validator";
 import { deleteFromStorage } from "../../../utils/storage_util";
+import User from "../../../models/users_model";
 
 // Helper function for deleting sticker files
 async function deleteStickerFiles(sticker: any) {
@@ -100,6 +101,13 @@ export const deletePack = async (req: Request, res: Response) => {
 
     // Delete the pack
     await pack.deleteOne();
+
+    // Remove pack from user
+    await User.findByIdAndUpdate(userId, {
+      $pull: {
+        packs: packId,
+      },
+    });
 
     // If some files failed to delete but the pack was deleted
     if (failedDeletions.length > 0) {

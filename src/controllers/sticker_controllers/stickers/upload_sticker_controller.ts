@@ -15,6 +15,8 @@ import {
   STICKER_REQUIREMENTS,
   PACK_REQUIREMENTS,
 } from "../../../config/app_requirement";
+import User from "../../../models/users_model";
+import { Types } from "mongoose";
 
 export const uploadStickerValidationRules = [
   param("packId").isMongoId().withMessage("Invalid pack ID"),
@@ -214,6 +216,9 @@ export const uploadSticker = async (req: Request, res: Response) => {
     }
     await pack.save();
 
+    // Get current sticker count for position
+    const currentPosition = pack.stickers.length;
+
     console.log("Creating sticker document...");
     const sticker = new Sticker({
       packId: pack._id,
@@ -229,12 +234,13 @@ export const uploadSticker = async (req: Request, res: Response) => {
         height: uploadResult.height,
       },
       format: uploadResult.format,
+      position: currentPosition,
     });
 
     await sticker.save();
     console.log("Sticker saved to database");
 
-    await pack.addSticker(sticker.id);
+    await pack.addSticker(sticker.id, userId);
     console.log("Pack updated with new sticker");
 
     return sendSuccessResponse<ISticker>({

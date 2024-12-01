@@ -26,6 +26,7 @@ export interface IStickerPackPreview {
     width: number;
     height: number;
   };
+  position: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -60,9 +61,10 @@ export interface StickerValidationResult {
 
 // Pack methods
 export interface IStickerPackMethods {
-  addSticker(stickerId: Types.ObjectId): Promise<void>;
-  removeSticker(stickerId: Types.ObjectId): Promise<void>;
-  toPreviewJSON(): IPackPreview;
+  addSticker(stickerId: Types.ObjectId, userId: String): Promise<void>;
+  removeSticker(stickerId: Types.ObjectId, userId: String): Promise<void>;
+  reorderStickers(stickerIds: Types.ObjectId[]): Promise<void>;
+  moveSticker(stickerId: Types.ObjectId, newPosition: number): Promise<void>;
 }
 
 // Model interface
