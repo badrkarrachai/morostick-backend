@@ -11,7 +11,7 @@ import config from "../../config";
 import { checkAccountRecoveryStatus } from "../../utils/account_deletion_check_util";
 import { formatUserData } from "../../utils/responces_templates/user_auth_response_template";
 import { sendWelcomeEmail } from "../../utils/email_sender_util";
-import { prepareJWTTokensForAuth } from "../../utils/jwt_util";
+import { prepareMobileAuthResponse } from "../../utils/jwt_util";
 
 // Update config structure to match existing configuration
 interface GoogleConfig {
@@ -169,7 +169,7 @@ export const handleMobileGoogleAuth = async (
     }
 
     // Generate JWT token
-    const accessToken = prepareJWTTokensForAuth(user, res);
+    const tokens = prepareMobileAuthResponse(user);
 
     // Format user data
     const userData = await formatUserData(user, messagesForUser);
@@ -183,7 +183,7 @@ export const handleMobileGoogleAuth = async (
       res,
       message: "Google authentication successful",
       data: {
-        accessToken,
+        ...tokens,
         user: userData,
       },
       status: 200,

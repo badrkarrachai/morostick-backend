@@ -10,7 +10,7 @@ import config from "../../config";
 import { checkAccountRecoveryStatus } from "../../utils/account_deletion_check_util";
 import { formatUserData } from "../../utils/responces_templates/user_auth_response_template";
 import { sendWelcomeEmail } from "../../utils/email_sender_util";
-import { prepareJWTTokensForAuth } from "../../utils/jwt_util";
+import { prepareMobileAuthResponse } from "../../utils/jwt_util";
 import axios, { AxiosResponse } from "axios";
 import { Types } from "mongoose";
 
@@ -204,7 +204,7 @@ export const handleFacebookMobileAuth = async (
     }
 
     // Generate authentication tokens
-    const authTokens = prepareJWTTokensForAuth(user, res);
+    const tokens = prepareMobileAuthResponse(user);
 
     // Format user data for response
     const userData = await formatUserData(user, messagesForUser);
@@ -214,7 +214,7 @@ export const handleFacebookMobileAuth = async (
       res,
       message: "Facebook authentication successful",
       data: {
-        accessToken: authTokens, // Just send the access token
+        ...tokens, // Just send the access token
         user: userData,
       },
       status: 200,

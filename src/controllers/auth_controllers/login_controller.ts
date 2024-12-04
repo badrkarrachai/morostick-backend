@@ -3,7 +3,7 @@ import User from "../../models/users_model";
 import {
   generateAccessToken,
   generateRefreshToken,
-  prepareJWTTokensForAuth,
+  prepareMobileAuthResponse,
 } from "../../utils/jwt_util";
 import sanitize from "mongo-sanitize";
 import bcrypt from "bcrypt";
@@ -117,7 +117,7 @@ export const login = async (req: Request, res: Response) => {
     await user.save();
 
     // Generate JWT tokens
-    const accessToken = prepareJWTTokensForAuth(user, res);
+    const tokens = prepareMobileAuthResponse(user);
 
     // Prepare user data for response
     const userData = await formatUserData(user, messagesForUser);
@@ -127,7 +127,7 @@ export const login = async (req: Request, res: Response) => {
       res: res,
       message: "Login successful",
       data: {
-        accessToken,
+        ...tokens,
         user: userData,
       },
     });

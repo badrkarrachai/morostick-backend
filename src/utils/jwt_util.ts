@@ -8,9 +8,9 @@ import crypto from "crypto";
 const accessTokenSecret = config.jwtSecret.accessTokenSecret;
 const refreshTokenSecret = config.jwtSecret.refreshTokenSecret;
 
-// Function to generate a unique JWT ID
+// Generate a unique JWT ID
 const generateUniqueId = (): string => {
-  return crypto.randomBytes(16).toString("hex");
+  return `${Date.now()}-${crypto.randomBytes(16).toString("hex")}`;
 };
 
 // Generate Access Token
@@ -21,6 +21,7 @@ export const generateAccessToken = (
   email: string,
   isVerified: boolean
 ): string => {
+  const now = Math.floor(Date.now() / 1000);
   const payload: JwtPayload = {
     user: {
       id: userId,
@@ -32,8 +33,8 @@ export const generateAccessToken = (
     iss: config.app.issuer,
     sub: userId,
     aud: config.app.audience,
-    iat: Math.floor(Date.now() / 1000),
-    nbf: Math.floor(Date.now() / 1000),
+    iat: now,
+    nbf: now,
     jti: generateUniqueId(),
   };
 
@@ -51,6 +52,7 @@ export const generateRefreshToken = (
   email: string,
   isVerified: boolean
 ): string => {
+  const now = Math.floor(Date.now() / 1000);
   const payload: JwtPayload = {
     user: {
       id: userId,
@@ -62,8 +64,8 @@ export const generateRefreshToken = (
     iss: config.app.issuer,
     sub: userId,
     aud: config.app.audience,
-    iat: Math.floor(Date.now() / 1000),
-    nbf: Math.floor(Date.now() / 1000),
+    iat: now,
+    nbf: now,
     jti: generateUniqueId(),
   };
 
@@ -91,8 +93,8 @@ export const verifyRefreshToken = (token: string): JwtPayload => {
   }) as JwtPayload;
 };
 
-// Prepare JWT for auth responses
-export const prepareJWTTokensForAuth = (user: IUser, res: Response): string => {
+// Mobile auth response
+export const prepareMobileAuthResponse = (user: IUser) => {
   const accessToken = generateAccessToken(
     user.id,
     user.role,
@@ -100,6 +102,31 @@ export const prepareJWTTokensForAuth = (user: IUser, res: Response): string => {
     user.email,
     user.emailVerified
   );
+
+  const refreshToken = generateRefreshToken(
+    user.id,
+    user.role,
+    user.name,
+    user.email,
+    user.emailVerified
+  );
+
+  return {
+    accessToken,
+    refreshToken,
+  };
+};
+
+// Web auth response
+export const prepareWebAuthResponse = (user: IUser, res: Response): string => {
+  const accessToken = generateAccessToken(
+    user.id,
+    user.role,
+    user.name,
+    user.email,
+    user.emailVerified
+  );
+
   const refreshToken = generateRefreshToken(
     user.id,
     user.role,
@@ -112,7 +139,23 @@ export const prepareJWTTokensForAuth = (user: IUser, res: Response): string => {
     httpOnly: true,
     secure: config.app.env === "production",
     sameSite: "strict",
-    maxAge: config.jwtSecret.refreshTokenExpiresIn * 24 * 60 * 60 * 1000,
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   });
+
   return accessToken;
+};
+
+// Token refresh response (only access token)
+export const prepareTokenRefreshResponse = (user: IUser) => {
+  const accessToken = generateAccessToken(
+    user.id,
+    user.role,
+    user.name,
+    user.email,
+    user.emailVerified
+  );
+
+  return {
+    accessToken,
+  };
 };
