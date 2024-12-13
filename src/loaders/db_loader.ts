@@ -1,17 +1,7 @@
-import mongoose from "mongoose";
-import config from "../config";
+import expressLoader from "./express_loader";
+import type { Express } from "express";
 
-const connectDB = async () => {
-  try {
-    if (!config.mongodb.url) {
-      throw new Error(
-        "MONGODB_URI is not defined in the environment variables."
-      );
-    }
-    await mongoose.connect(config.mongodb.url);
-  } catch (err) {
-    return err;
-  }
-};
-
-export default connectDB;
+export default async function ({ app }: { app: Express }) {
+  await expressLoader({ app });
+  console.log("✅ Express loaded");
+}

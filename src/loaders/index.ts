@@ -1,11 +1,8 @@
-import connectDB from "./db_loader";
+// loaders/index.ts
 import expressLoader from "./express_loader";
 import type { Express } from "express";
 
-export default async function ({ app }: { app: Express }) {
-  await connectDB();
-  console.log("Mongodb loaded");
-
+export default async function (app: Express) {
   await expressLoader({ app });
-  console.log("Express loaded");
+  console.log("✅ Express loaded");
 }
