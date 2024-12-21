@@ -30,7 +30,9 @@ export const updatePack = async (req: Request, res: Response) => {
         errorFields: Array.isArray(validationErrors)
           ? validationErrors
           : undefined,
-        errorDetails: "The provided data is invalid.",
+        errorDetails: Array.isArray(validationErrors)
+          ? validationErrors.join(", ")
+          : validationErrors,
         status: 400,
       });
     }
@@ -70,7 +72,7 @@ export const updatePack = async (req: Request, res: Response) => {
     }
 
     // Check if pack if it has no stickers to change isAnimatedPack
-    if (pack.stickers.length > 0 && isAnimatedPack !== undefined) {
+    if (pack.stickers.length > 0 && isAnimatedPack !== pack.isAnimatedPack) {
       return sendErrorResponse({
         res,
         message: "Cannot change pack type",
