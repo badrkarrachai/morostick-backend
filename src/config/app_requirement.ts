@@ -4,9 +4,11 @@ export const PACK_REQUIREMENTS = {
   maxPreviewStickers: 5,
   nameMaxLength: 32,
   descriptionMaxLength: 512,
+  maxCategories: 50,
 };
 // Sticker-specific constants
 export const STICKER_REQUIREMENTS = {
+  nameMaxLength: 100,
   maxFileSize: 5 * 1024 * 1024, // 5MB for static files
   animatedMaxFileSize: 10 * 1024 * 1024, // 10MB for animated files
   dimensions: {
@@ -15,6 +17,7 @@ export const STICKER_REQUIREMENTS = {
     minWidth: 100,
     minHeight: 100,
   },
+  maxCategories: 50,
   maxTags: 100,
   maxEmojis: 3,
   allowedFormats: ["webp", "png", "jpeg", "jpg", "gif"],

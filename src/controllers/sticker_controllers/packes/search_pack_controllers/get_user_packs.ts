@@ -8,7 +8,7 @@ import {
 import { validateRequest } from "../../../../utils/validations_util";
 import { body, query } from "express-validator";
 import { IPackPreview } from "../../../../interfaces/pack_interface";
-import { PackPreviewFormatter } from "../../../../utils/responces_templates/pack_response_template";
+import { PackPreviewFormatter } from "../../../../utils/responces_templates/response_views_transformer";
 import { PACK_REQUIREMENTS } from "../../../../config/app_requirement";
 
 export const getUserPrivatePacksValidationRules = [

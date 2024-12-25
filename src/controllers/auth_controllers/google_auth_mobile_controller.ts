@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { OAuth2Client, TokenPayload } from "google-auth-library";
+import axios from "axios";
 import User from "../../models/users_model";
 import Image from "../../models/image_model";
 import bcrypt from "bcrypt";
@@ -13,21 +13,18 @@ import { formatUserData } from "../../utils/responces_templates/user_auth_respon
 import { sendWelcomeEmail } from "../../utils/email_sender_util";
 import { prepareMobileAuthResponse } from "../../utils/jwt_util";
 
-// Update config structure to match existing configuration
-interface GoogleConfig {
-  clientID: string;
-  mobileClientID: string;
-  clientSecret: string;
-}
-
-const googleClient = new OAuth2Client({
-  clientId: config.google.mobileClientID, // Use mobile client ID as default
-});
-
 interface GoogleAuthRequest extends Request {
   body: {
-    idToken: string;
+    accessToken: string;
   };
+}
+
+interface GoogleUserData {
+  id: string;
+  email: string;
+  name: string;
+  picture?: string;
+  verified_email: boolean;
 }
 
 export const handleMobileGoogleAuth = async (
@@ -35,52 +32,59 @@ export const handleMobileGoogleAuth = async (
   res: Response
 ) => {
   try {
-    const { idToken } = req.body;
+    const { accessToken } = req.body;
 
-    if (!idToken) {
+    if (!accessToken) {
       return sendErrorResponse({
         res,
-        message: "ID token is required",
+        message: "Access token is required",
         errorCode: "INVALID_TOKEN",
-        errorDetails: "No ID token provided",
+        errorDetails: "No access token provided",
         status: 400,
       });
     }
 
-    let payload: TokenPayload;
+    // Fetch user info from Google API
+    let googleUserData: GoogleUserData;
     try {
-      // Try verifying with both client IDs
-      const ticket = await googleClient.verifyIdToken({
-        idToken,
-      });
-
-      payload = ticket.getPayload() as TokenPayload;
-      if (!payload) {
-        throw new Error("Invalid token payload");
-      }
-    } catch (verificationError) {
+      const response = await axios.get<GoogleUserData>(
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+      googleUserData = response.data;
+    } catch (error) {
       return sendErrorResponse({
         res,
-        message: "Token verification failed",
-        errorCode: "TOKEN_VERIFICATION_FAILED",
-        errorDetails: verificationError.message,
+        message: "Failed to fetch user info from Google",
+        errorCode: "FETCH_USER_FAILED",
+        errorDetails: error.message,
         status: 401,
       });
     }
 
-    const { email, name, picture, sub: googleId } = payload;
+    const {
+      email,
+      name,
+      picture,
+      id: googleId,
+      verified_email,
+    } = googleUserData;
 
-    if (!email) {
+    if (!email || !verified_email) {
       return sendErrorResponse({
         res,
-        message: "Email not found in Google profile",
+        message: "Invalid or unverified email in Google profile",
         errorCode: "INVALID_PROFILE",
-        errorDetails: "No email found in Google profile",
+        errorDetails: "Email not verified or missing in Google profile",
         status: 400,
       });
     }
 
-    let user = await User.findOne({ email });
+    let user = await User.findOne({ email }).populate("avatar");
     let messagesForUser: string[] = [];
 
     if (user) {
@@ -92,7 +96,7 @@ export const handleMobileGoogleAuth = async (
       user.lastLogin = new Date();
 
       // Update avatar if not set and picture is available
-      if (!user.avatar && picture) {
+      if (user.avatar === null && picture !== null && picture.trim() !== "") {
         const newAvatar = new Image({
           userId: user.id,
           name: `${user.name}'s avatar`,
@@ -100,6 +104,7 @@ export const handleMobileGoogleAuth = async (
         });
 
         const savedAvatar = await newAvatar.save();
+
         user.avatar = savedAvatar.id;
       }
 
@@ -142,8 +147,7 @@ export const handleMobileGoogleAuth = async (
         res,
         message: "Your account is disabled",
         errorCode: "ACCOUNT_DISABLED",
-        errorDetails:
-          "Account is not activated, please contact the support team.",
+        errorDetails: "Account is not activated, please contact support.",
         status: 403,
       });
     }
@@ -159,8 +163,7 @@ export const handleMobileGoogleAuth = async (
         res,
         message: "Account has been permanently deleted",
         errorCode: "ACCOUNT_DELETED",
-        errorDetails:
-          "The recovery period has ended. Your account is scheduled for permanent deletion.",
+        errorDetails: "Recovery period ended. Account scheduled for deletion.",
         status: 403,
       });
     }
@@ -168,7 +171,7 @@ export const handleMobileGoogleAuth = async (
       messagesForUser.push(recoveryMessage);
     }
 
-    // Generate JWT token
+    // Generate JWT tokens
     const tokens = prepareMobileAuthResponse(user);
 
     // Format user data
@@ -178,7 +181,6 @@ export const handleMobileGoogleAuth = async (
     user.lastLogin = new Date();
     await user.save();
 
-    // Send success response
     return sendSuccessResponse({
       res,
       message: "Google authentication successful",

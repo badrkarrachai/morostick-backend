@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { StickerPack } from "../../../models/pack_model";
+import { Sticker } from "../../../models/sticker_model";
 import {
   sendSuccessResponse,
   sendErrorResponse,
@@ -7,22 +8,18 @@ import {
 import { validateRequest } from "../../../utils/validations_util";
 import { body, param } from "express-validator";
 import { Types } from "mongoose";
-import { PackPreviewFormatter } from "../../../utils/responces_templates/pack_response_template";
-import { IPackPreview } from "../../../interfaces/pack_interface";
+import { processObject } from "../../../utils/process_object";
+import { packKeysToRemove } from "../../../interfaces/pack_interface";
+import { transformPack } from "../../../utils/responces_templates/response_views_transformer";
 
-// Validation for reordering multiple stickers
 export const reorderStickersValidationRules = [
   param("packId").isMongoId().withMessage("Invalid pack ID"),
   body("stickerIds")
-    .isArray()
-    .withMessage("Sticker IDs must be an array")
-    .custom((value) => {
-      return value.every((id: string) => Types.ObjectId.isValid(id));
-    })
-    .withMessage("Invalid sticker ID format"),
+    .isArray({ min: 1 })
+    .withMessage("Sticker IDs must be a non-empty array"),
+  body("stickerIds.*").isMongoId().withMessage("Invalid sticker ID format"),
 ];
 
-// Validation for moving a single sticker
 export const moveStickerValidationRules = [
   param("packId").isMongoId().withMessage("Invalid pack ID"),
   body("stickerId").isMongoId().withMessage("Invalid sticker ID"),
@@ -31,7 +28,6 @@ export const moveStickerValidationRules = [
     .withMessage("New position must be a non-negative integer"),
 ];
 
-// Reorder multiple stickers
 export const reorderStickers = async (req: Request, res: Response) => {
   const userId = req.user.id;
   const { packId } = req.params;
@@ -52,70 +48,122 @@ export const reorderStickers = async (req: Request, res: Response) => {
         errorFields: Array.isArray(validationErrors)
           ? validationErrors
           : undefined,
-        errorDetails: "Invalid input parameters",
+        errorDetails: validationErrors,
         status: 400,
       });
     }
 
-    // Find pack
-    const pack = await StickerPack.findById(packId);
+    // Find pack with stickers populated
+    const pack = await StickerPack.findById(packId).populate({
+      path: "stickers",
+      select: "_id creator packId",
+    });
+
     if (!pack) {
       return sendErrorResponse({
         res,
         message: "Pack not found",
         errorCode: "PACK_NOT_FOUND",
-        errorDetails: "The requested pack does not exist",
+        errorDetails: "The requested pack does not exist.",
         status: 404,
       });
     }
 
-    // Check ownership
-    if (pack.creator._id.toString() !== userId) {
+    // Validate user is pack creator
+    const isPackCreator = await StickerPack.exists({
+      _id: packId,
+      creator: userId,
+    });
+
+    if (!isPackCreator) {
       return sendErrorResponse({
         res,
         message: "Unauthorized",
         errorCode: "UNAUTHORIZED",
-        errorDetails: "You do not have permission to modify this pack",
+        errorDetails:
+          "You do not have permission to reorder stickers in this pack.",
         status: 403,
       });
     }
 
-    // Reorder stickers
-    try {
-      await pack.reorderStickers(
-        stickerIds.map((id: string) => new Types.ObjectId(id))
-      );
-    } catch (error) {
+    // Validate sticker count matches
+    if (stickerIds.length !== pack.stickers.length) {
       return sendErrorResponse({
         res,
-        message: "Reorder failed",
-        errorCode: "REORDER_FAILED",
-        errorDetails: error.message,
+        message: "Invalid sticker count",
+        errorCode: "INVALID_STICKER_COUNT",
+        errorDetails:
+          "The number of stickers provided does not match the pack.",
         status: 400,
       });
     }
 
-    // Reload pack with updated sticker order
-    const updatedPack = await StickerPack.findById(packId).populate("stickers");
+    // Validate all stickers exist and belong to this pack
+    const stickers = await Sticker.find({
+      _id: { $in: stickerIds },
+      packId: packId,
+    }).lean();
 
-    return sendSuccessResponse<IPackPreview>({
+    if (stickers.length !== stickerIds.length) {
+      return sendErrorResponse({
+        res,
+        message: "Invalid stickers",
+        errorCode: "INVALID_STICKERS",
+        errorDetails:
+          "One or more stickers do not exist or do not belong to this pack.",
+        status: 400,
+      });
+    }
+
+    // Convert string IDs to ObjectIds
+    const stickerObjectIds = stickerIds.map((id) => new Types.ObjectId(id));
+
+    // Update sticker positions
+    await Promise.all(
+      stickerObjectIds.map((stickerId, index) =>
+        Sticker.findByIdAndUpdate(stickerId, { position: index })
+      )
+    );
+
+    // Update pack stickers order
+    const updatedPack = await StickerPack.findByIdAndUpdate(
+      packId,
+      { $set: { stickers: stickerObjectIds } },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!updatedPack) {
+      return sendErrorResponse({
+        res,
+        message: "Update failed",
+        errorCode: "UPDATE_FAILED",
+        errorDetails: "Failed to update sticker order.",
+        status: 500,
+      });
+    }
+
+    const packView = await transformPack(updatedPack);
+
+    return sendSuccessResponse({
       res,
       message: "Stickers reordered successfully",
-      data: PackPreviewFormatter.toPackPreview(updatedPack),
+      data: packView,
     });
-  } catch (error) {
-    console.error("Sticker reorder error:", error);
+  } catch (err) {
+    console.error("Sticker reorder error:", err);
     return sendErrorResponse({
       res,
       message: "Server error",
       errorCode: "SERVER_ERROR",
-      errorDetails: "An unexpected error occurred while reordering stickers",
+      errorDetails: "An unexpected error occurred while reordering stickers.",
       status: 500,
     });
   }
 };
 
-// Move single sticker
 export const moveSticker = async (req: Request, res: Response) => {
   const userId = req.user.id;
   const { packId } = req.params;
@@ -136,68 +184,114 @@ export const moveSticker = async (req: Request, res: Response) => {
         errorFields: Array.isArray(validationErrors)
           ? validationErrors
           : undefined,
-        errorDetails: "Invalid input parameters",
+        errorDetails: validationErrors,
         status: 400,
       });
     }
 
-    // Find pack
-    const pack = await StickerPack.findById(packId);
+    // Find pack with stickers
+    const pack = await StickerPack.findById(packId).populate({
+      path: "stickers",
+      select: "_id position",
+    });
+
     if (!pack) {
       return sendErrorResponse({
         res,
         message: "Pack not found",
         errorCode: "PACK_NOT_FOUND",
-        errorDetails: "The requested pack does not exist",
+        errorDetails: "The requested pack does not exist.",
         status: 404,
       });
     }
 
-    // Check ownership
-    if (pack.creator._id.toString() !== userId) {
+    // Validate user is pack creator
+    const isPackCreator = await StickerPack.exists({
+      _id: packId,
+      creator: userId,
+    });
+
+    if (!isPackCreator) {
       return sendErrorResponse({
         res,
         message: "Unauthorized",
         errorCode: "UNAUTHORIZED",
-        errorDetails: "You do not have permission to modify this pack",
+        errorDetails:
+          "You do not have permission to move stickers in this pack.",
         status: 403,
       });
     }
 
-    // Move sticker
-    try {
-      await pack.moveSticker(new Types.ObjectId(stickerId), newPosition);
-    } catch (error) {
+    // Validate sticker exists and belongs to pack
+    const sticker = await Sticker.findOne({
+      _id: stickerId,
+      packId: packId,
+    });
+
+    if (!sticker) {
       return sendErrorResponse({
         res,
-        message: "Move failed",
-        errorCode: "MOVE_FAILED",
-        errorDetails: error.message,
+        message: "Invalid sticker",
+        errorCode: "INVALID_STICKER",
+        errorDetails: "Sticker does not exist or does not belong to this pack.",
         status: 400,
       });
     }
 
-    // Reload pack with updated sticker order
-    const updatedPack = await StickerPack.findById(packId).populate("stickers");
+    // Validate new position
+    if (newPosition >= pack.stickers.length) {
+      return sendErrorResponse({
+        res,
+        message: "Invalid position",
+        errorCode: "INVALID_POSITION",
+        errorDetails: "The new position exceeds the pack's sticker count.",
+        status: 400,
+      });
+    }
 
-    return sendSuccessResponse<IPackPreview>({
+    const currentPosition = sticker.position;
+
+    // Update positions for affected stickers
+    if (newPosition > currentPosition) {
+      await Sticker.updateMany(
+        {
+          packId,
+          position: { $gt: currentPosition, $lte: newPosition },
+        },
+        { $inc: { position: -1 } }
+      );
+    } else if (newPosition < currentPosition) {
+      await Sticker.updateMany(
+        {
+          packId,
+          position: { $gte: newPosition, $lt: currentPosition },
+        },
+        { $inc: { position: 1 } }
+      );
+    }
+
+    // Update moved sticker position
+    sticker.position = newPosition;
+    await sticker.save();
+
+    // Return updated pack
+    const updatedPack = await StickerPack.findById(packId);
+
+    const packView = await transformPack(updatedPack);
+
+    return sendSuccessResponse({
       res,
       message: "Sticker moved successfully",
-      data: PackPreviewFormatter.toPackPreview(updatedPack),
+      data: packView,
     });
-  } catch (error) {
-    console.error("Sticker move error:", error);
+  } catch (err) {
+    console.error("Sticker move error:", err);
     return sendErrorResponse({
       res,
       message: "Server error",
       errorCode: "SERVER_ERROR",
-      errorDetails: "An unexpected error occurred while moving the sticker",
+      errorDetails: "An unexpected error occurred while moving the sticker.",
       status: 500,
     });
   }
-};
-
-export default {
-  reorderStickers,
-  moveSticker,
 };

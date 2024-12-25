@@ -65,7 +65,7 @@ export const deletePack = async (req: Request, res: Response) => {
     }
 
     // Check ownership
-    if (pack.creator._id.toString() !== userId) {
+    if (pack.creator.toString() !== userId) {
       return sendErrorResponse({
         res,
         message: "Unauthorized",

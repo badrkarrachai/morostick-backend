@@ -7,7 +7,7 @@ import {
 import { query } from "express-validator";
 import { validateRequest } from "../../../../utils/validations_util";
 import { PipelineStage, Types } from "mongoose";
-import { PackPreviewFormatter } from "../../../../utils/responces_templates/pack_response_template";
+import { PackPreviewFormatter } from "../../../../utils/responces_templates/response_views_transformer";
 import { PACK_REQUIREMENTS } from "../../../../config/app_requirement";
 
 interface AggregatedPack {

@@ -74,7 +74,7 @@ export const deleteSticker = async (req: Request, res: Response) => {
       });
     }
 
-    if (pack.creator._id.toString() !== userId) {
+    if (pack.creator.toString() !== userId) {
       return sendErrorResponse({
         res,
         message: "Unauthorized",
@@ -95,7 +95,7 @@ export const deleteSticker = async (req: Request, res: Response) => {
     const deletedPosition = sticker.position;
 
     // Remove sticker from pack and update positions
-    await pack.removeSticker(sticker.id, userId);
+    await pack.removeSticker(sticker.id);
 
     // Update positions of remaining stickers
     await Sticker.updateMany(
@@ -188,7 +188,7 @@ export const bulkDeleteStickers = async (req: Request, res: Response) => {
       });
     }
 
-    if (pack.creator._id.toString() !== userId) {
+    if (pack.creator.toString() !== userId) {
       return sendErrorResponse({
         res,
         message: "Unauthorized",
@@ -214,7 +214,7 @@ export const bulkDeleteStickers = async (req: Request, res: Response) => {
 
     // Remove stickers and update positions
     for (const sticker of stickers) {
-      await pack.removeSticker(sticker.id, userId);
+      await pack.removeSticker(sticker.id);
     }
 
     // Reorder remaining stickers to ensure sequential positions
