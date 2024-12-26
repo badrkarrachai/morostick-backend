@@ -13,11 +13,7 @@ import {
   validateRequest,
 } from "../../utils/validations_util";
 import { formatUserData } from "../../utils/responces_templates/user_auth_response_template";
-import {
-  generateAccessToken,
-  generateRefreshToken,
-  prepareJWTTokensForAuth,
-} from "../../utils/jwt_util";
+import { prepareMobileAuthResponse } from "../../utils/jwt_util";
 import { IUser } from "../../interfaces/user_interface";
 
 export const register = async (req: Request, res: Response) => {
@@ -35,7 +31,9 @@ export const register = async (req: Request, res: Response) => {
         res,
         message: "Invalid input",
         errorCode: "INVALID_INPUT",
-        errorDetails: validationErrors,
+        errorDetails: Array.isArray(validationErrors)
+          ? validationErrors.join(", ")
+          : validationErrors,
         status: 400,
       });
     }
@@ -82,14 +80,14 @@ export const register = async (req: Request, res: Response) => {
     const userData = await formatUserData(newUser, messagesForUser);
 
     // Generate JWT tokens
-    const accessToken = prepareJWTTokensForAuth(newUser, res);
+    const tokens = prepareMobileAuthResponse(newUser);
 
     // Send response
     return sendSuccessResponse({
       res,
       message: "Registration successful",
       data: {
-        accessToken,
+        ...tokens,
         user: userData,
       },
       status: 201,

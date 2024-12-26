@@ -1,95 +1,170 @@
 import { Request, Response, NextFunction } from "express";
-import { verifyAccessToken, verifyRefreshToken } from "../../utils/jwt_util";
-import { JwtPayload } from "../../interfaces/jwt_payload_interface";
+import {
+  verifyAccessToken,
+  verifyRefreshToken,
+  generateAccessToken,
+} from "../../utils/jwt_util";
 import { sendErrorResponse } from "../../utils/response_handler_util";
 import User from "../../models/users_model";
+import { RateLimiterMemory } from "rate-limiter-flexible";
 import config from "../../config";
 
-export const auth = async (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.header("Authorization");
-  const token = authHeader && authHeader.split(" ")[1];
+// More lenient rate limiter for private endpoints
+const rateLimiter = new RateLimiterMemory({
+  points: 30, // Number of attempts
+  duration: 60, // Per minute
+  blockDuration: 60, // Block for 1 minute if exceeded
+});
 
-  if (!token) {
-    return sendErrorResponse({
-      res: res,
-      message: "Please log in to access this feature",
-      errorCode: "LOGIN_REQUIRED",
-      errorDetails:
-        "Your session may have expired. Please log in again to continue.",
-      status: 401,
-    });
+// Custom error class for auth errors
+class AuthError extends Error {
+  constructor(
+    public message: string,
+    public errorCode: string,
+    public errorDetails: string,
+    public status: number
+  ) {
+    super(message);
+    this.name = "AuthError";
   }
+}
 
+interface AuthRequest extends Request {
+  user?: any;
+}
+
+// Handle different types of auth errors
+const handleAuthError = (error: any): AuthError => {
+  switch (error.name) {
+    case "TokenExpiredError":
+      return new AuthError(
+        "Session timed out",
+        "SESSION_TIMEOUT",
+        "Your session has timed out for security reasons. Please log in again to continue.",
+        401
+      );
+    case "JsonWebTokenError":
+      return new AuthError(
+        "Authentication failed",
+        "AUTH_FAILED",
+        "We couldn't verify your identity. Please try logging in again.",
+        401
+      );
+    default:
+      return new AuthError(
+        "Oops! Something went wrong",
+        "UNEXPECTED_ERROR",
+        "We encountered an unexpected error. Please try again later.",
+        500
+      );
+  }
+};
+
+// Extract and validate bearer token
+const extractToken = (authHeader: string | undefined): string => {
+  if (!authHeader?.startsWith("Bearer ")) {
+    throw new AuthError(
+      "Invalid authentication format",
+      "INVALID_AUTH_FORMAT",
+      "Please provide a valid authentication token.",
+      401
+    );
+  }
+  return authHeader.split(" ")[1];
+};
+
+// Main authentication middleware
+export const auth = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const decoded = verifyAccessToken(token);
+    // Rate limiting
+    await rateLimiter.consume(req.ip);
+
+    // Extract and validate token
+    const token = extractToken(req.header("Authorization"));
+
+    // Verify access token
+    const decoded = await verifyAccessToken(token);
     req.user = decoded.user;
 
-    const user = await User.findById(req.user.id);
-    if (!user) {
-      return sendErrorResponse({
-        res: res,
-        message: "Account not found",
-        errorCode: "ACCOUNT_NOT_FOUND",
-        errorDetails:
-          "We couldn't find your account. Please contact support if you believe this is an error.",
-        status: 404,
-      });
+    // Validate user exists and is active
+    const user = await User.findById(req.user.id).select("+isActivated");
+
+    if (!user || !user.isActivated) {
+      throw new AuthError(
+        "Account not found or inactive",
+        "ACCOUNT_NOT_FOUND",
+        "We couldn't find an active account with these credentials.",
+        404
+      );
     }
 
-    const refreshToken = req.cookies.refreshToken;
-    if (!refreshToken) {
-      return sendErrorResponse({
-        res: res,
-        message: "Session expired",
-        errorCode: "SESSION_EXPIRED",
-        errorDetails:
-          "Your session has expired. Please log in again to continue.",
-        status: 401,
-      });
-    }
+    // Check if token needs renewal based on iat
+    const now = Math.floor(Date.now() / 1000);
+    const tokenAge = now - (decoded.iat || now);
+    const renewalThreshold =
+      config.jwtSecret.accessTokenExpiresIn * 60 - 5 * 60;
 
-    try {
-      verifyRefreshToken(refreshToken);
-    } catch (err) {
-      return sendErrorResponse({
-        res: res,
-        message: "Session invalid",
-        errorCode: "INVALID_SESSION",
-        errorDetails:
-          "Your session is no longer valid. Please log in again for security reasons.",
-        status: 401,
-      });
+    if (tokenAge > renewalThreshold) {
+      const newAccessToken = generateAccessToken(
+        user._id.toString(),
+        user.role,
+        user.name,
+        user.email,
+        user.emailVerified
+      );
+      res.setHeader("X-New-Access-Token", newAccessToken);
     }
 
     next();
-  } catch (err) {
-    if (err.name === "TokenExpiredError") {
+  } catch (error) {
+    if (error.name === "AuthError") {
       return sendErrorResponse({
-        res: res,
-        message: "Session timed out",
-        errorCode: "SESSION_TIMEOUT",
-        errorDetails:
-          "Your session has timed out for security reasons. Please log in again to continue.",
-        status: 401,
-      });
-    } else if (err.name === "JsonWebTokenError") {
-      return sendErrorResponse({
-        res: res,
-        message: "Authentication failed",
-        errorCode: "AUTH_FAILED",
-        errorDetails:
-          "We couldn't verify your identity. Please try logging in again.",
-        status: 401,
+        res,
+        message: error.message,
+        errorCode: error.errorCode,
+        errorDetails: error.errorDetails,
+        status: error.status,
       });
     }
-    console.error("Auth middleware error:", err);
+
+    // Handle rate limiter errors
+    if (error.name === "RateLimiterError") {
+      return sendErrorResponse({
+        res,
+        message: "Too many requests",
+        errorCode: "RATE_LIMIT_EXCEEDED",
+        errorDetails: "Please wait a moment before trying again.",
+        status: 429,
+      });
+    }
+
+    const authError = handleAuthError(error);
     return sendErrorResponse({
-      res: res,
-      message: "Oops! Something went wrong",
-      errorCode: "UNEXPECTED_ERROR",
-      errorDetails:
-        "We encountered an unexpected error. Please try again later or contact support if the problem persists.",
-      status: 500,
+      res,
+      message: authError.message,
+      errorCode: authError.errorCode,
+      errorDetails: authError.errorDetails,
+      status: authError.status,
     });
   }
+};
+
+// Optional: Role-based access control middleware
+export const requireRole = (roles: string[]) => {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return sendErrorResponse({
+        res,
+        message: "Access denied",
+        errorCode: "INSUFFICIENT_PERMISSIONS",
+        errorDetails: "You don't have permission to access this resource.",
+        status: 403,
+      });
+    }
+    next();
+  };
 };

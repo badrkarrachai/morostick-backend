@@ -1,10 +1,14 @@
 import dotenv from "dotenv";
-import e from "express";
+import { existsSync } from "fs";
+import path from "path";
 
-const envFound = dotenv.config();
+const envPath = path.resolve(process.cwd(), ".env");
 
-if (envFound.error) {
-  throw new Error("no .env file found");
+if (existsSync(envPath)) {
+  console.log("Loading environment variables from .env file");
+  dotenv.config();
+} else {
+  console.log("No .env file found, using existing environment variables");
 }
 
 export default {
