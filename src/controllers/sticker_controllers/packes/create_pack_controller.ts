@@ -1,23 +1,72 @@
 import { Request, Response } from "express";
 import { StickerPack } from "../../../models/pack_model";
+import { Category } from "../../../models/category_model";
 import {
   sendSuccessResponse,
   sendErrorResponse,
 } from "../../../utils/response_handler_util";
 import { validateRequest } from "../../../utils/validations_util";
-import { PACK_REQUIREMENTS } from "../../../interfaces/pack_interface";
-import { IPackPreview } from "../../../interfaces/pack_interface";
 import { body } from "express-validator";
-import User from "../../../models/users_model";
-import { IUser } from "../../../interfaces/user_interface";
-import { IImages } from "../../../interfaces/image_interface";
-import { PackPreviewFormatter } from "../../../utils/responces_templates/pack_response_template";
+import { PACK_REQUIREMENTS } from "../../../config/app_requirement";
+import { Types } from "mongoose";
+import { processObject } from "../../../utils/process_object";
+import { packKeysToRemove } from "../../../interfaces/pack_interface";
+import { transformPack } from "../../../utils/responces_templates/response_views_transformer";
 
-// Add type for authenticated request
+export const createPackValidationRules = [
+  body("name")
+    .trim()
+    .notEmpty()
+    .withMessage("Pack name is required")
+    .isLength({ max: PACK_REQUIREMENTS.nameMaxLength })
+    .withMessage(
+      `Pack name cannot exceed ${PACK_REQUIREMENTS.nameMaxLength} characters`
+    ),
+  body("description")
+    .optional()
+    .trim()
+    .isLength({ max: PACK_REQUIREMENTS.descriptionMaxLength })
+    .withMessage(
+      `Description cannot exceed ${PACK_REQUIREMENTS.descriptionMaxLength} characters`
+    ),
+  body("isAnimatedPack")
+    .optional()
+    .isBoolean()
+    .withMessage("Invalid animation type"),
+  body("isPrivate")
+    .exists()
+    .withMessage("Private pack status is required")
+    .isBoolean()
+    .withMessage("Invalid private pack status"),
+  body("categoryIds")
+    .optional()
+    .isArray()
+    .withMessage("Category IDs must be an array"),
+  body("categoryIds.*")
+    .optional()
+    .isMongoId()
+    .withMessage("Invalid category ID format"),
+  body("categoryNames") // Updated to handle array of names
+    .optional()
+    .isArray()
+    .withMessage("Category names must be an array"),
+  body("categoryName") // Keep single name support for backward compatibility
+    .optional()
+    .isString()
+    .trim(),
+];
 
 export const createPack = async (req: Request, res: Response) => {
   const userId = req.user.id;
-  const { name, description, tags, isAnimatedPack, isPrivate } = req.body;
+  const {
+    name,
+    description,
+    isAnimatedPack,
+    isPrivate,
+    categoryIds,
+    categoryNames,
+    categoryName,
+  } = req.body;
 
   try {
     // Validate request
@@ -34,62 +83,73 @@ export const createPack = async (req: Request, res: Response) => {
         errorFields: Array.isArray(validationErrors)
           ? validationErrors
           : undefined,
-        errorDetails: validationErrors,
+        errorDetails: Array.isArray(validationErrors)
+          ? validationErrors.join(", ")
+          : validationErrors,
         status: 400,
       });
     }
 
-    // Sanitize and validate tags
-    const sanitizedTags = tags ? tags.slice(0, PACK_REQUIREMENTS.maxTags) : [];
-
-    // Find user and populate avatar
-    const user = await User.findById(userId).populate<{ avatar: IImages }>(
-      "avatar"
-    );
-    if (!user) {
-      return sendErrorResponse({
-        res,
-        message: "User not found",
-        errorCode: "USER_NOT_FOUND",
-        errorDetails:
-          "There is no session with this user id, please login again.",
-        status: 404,
+    try {
+      // Handle all category assignment scenarios
+      const packCategories = await Category.assignCategories({
+        categoryIds,
+        categoryNames: categoryName ? [categoryName] : categoryNames,
+        fallbackName: name, // Use pack name as fallback
       });
+
+      // Create the pack
+      const pack = new StickerPack({
+        name: name.trim(),
+        description: description?.trim(),
+        creator: [new Types.ObjectId(userId)],
+        stickers: [],
+        categories: packCategories,
+        isPrivate: isPrivate,
+        isAuthorized: false,
+        isAnimatedPack: isAnimatedPack ?? false,
+        stats: {
+          downloads: 0,
+          views: 0,
+          favorites: 0,
+        },
+      });
+
+      // Save the pack
+      await pack.save();
+
+      // Update category stats in parallel
+      await Promise.all(
+        packCategories.map((categoryId) =>
+          Category.findByIdAndUpdate(categoryId, {
+            $inc: { "stats.packCount": 1 },
+          })
+        )
+      );
+
+      const packView = await transformPack(pack);
+
+      return sendSuccessResponse({
+        res,
+        status: 201,
+        message: "Sticker pack created successfully",
+        data: packView,
+      });
+    } catch (error) {
+      if (error.message === "No valid categories could be assigned") {
+        return sendErrorResponse({
+          res,
+          message: "Category assignment failed",
+          errorCode: "CATEGORY_ASSIGNMENT_FAILED",
+          errorDetails: "Could not assign or create any valid categories",
+          status: 400,
+        });
+      }
+      throw error; // Re-throw other errors
     }
-
-    // Create the pack with proper type checking
-    const pack = new StickerPack({
-      name: name.trim(),
-      description: description?.trim(),
-      creator: {
-        _id: userId,
-        username: user.name,
-        avatarUrl: user.avatar?.url || undefined,
-      },
-      tags: sanitizedTags,
-      stickers: [],
-      isPrivate: isPrivate,
-      isAnimatedPack: isAnimatedPack,
-      stats: {
-        downloads: 0,
-        views: 0,
-        favorites: 0,
-      },
-    });
-
-    // Save the pack
-    await pack.save();
-
-    return sendSuccessResponse<IPackPreview>({
-      res,
-      status: 201,
-      message: "Sticker pack created successfully",
-      data: PackPreviewFormatter.toPackPreview(pack),
-    });
   } catch (err) {
     console.error("Pack creation error:", err);
 
-    // Check for specific MongoDB errors
     if (err.code === 11000) {
       return sendErrorResponse({
         res,
@@ -111,37 +171,3 @@ export const createPack = async (req: Request, res: Response) => {
     });
   }
 };
-
-// Validation rules
-export const createPackValidationRules = [
-  body("name")
-    .trim()
-    .notEmpty()
-    .withMessage("Pack name is required")
-    .isLength({ max: PACK_REQUIREMENTS.nameMaxLength })
-    .withMessage(
-      `Pack name cannot exceed ${PACK_REQUIREMENTS.nameMaxLength} characters`
-    ),
-  body("description")
-    .optional()
-    .trim()
-    .isLength({ max: PACK_REQUIREMENTS.descriptionMaxLength })
-    .withMessage(
-      `Description cannot exceed ${PACK_REQUIREMENTS.descriptionMaxLength} characters`
-    ),
-  body("tags")
-    .optional()
-    .isArray()
-    .withMessage("Tags must be an array")
-    .custom((tags) => tags.length <= PACK_REQUIREMENTS.maxTags)
-    .withMessage(`Maximum ${PACK_REQUIREMENTS.maxTags} tags allowed`),
-  body("isAnimatedPack")
-    .optional()
-    .isBoolean()
-    .withMessage("Invalid animation type"),
-  body("isPrivate")
-    .exists()
-    .withMessage("Private pack status is required")
-    .isBoolean()
-    .withMessage("Invalid private pack status"),
-];

@@ -11,7 +11,10 @@ import fs from "fs/promises";
 import os from "os";
 import { AllowedFileFormat, mimeTypeToFormat } from "../types/storage.types";
 import config from "../config";
-import { PLATFORM_CONFIGS } from "../interfaces/platform_config_interface";
+import {
+  AVATAR_REQUIREMENTS,
+  PLATFORM_CONFIGS,
+} from "../config/app_requirement";
 
 // Initialize S3 client for Cloudflare R2
 const s3Client = new S3Client({
@@ -329,6 +332,158 @@ export const deleteFromStorage = async (fileUrl: string): Promise<boolean> => {
     return true;
   } catch (error) {
     console.error("Storage delete error:", error);
+    return false;
+  }
+};
+
+interface ProcessedAvatar {
+  buffer: Buffer;
+  width: number;
+  height: number;
+  format: string;
+  fileSize: number;
+}
+
+async function processAvatar(buffer: Buffer): Promise<ProcessedAvatar> {
+  try {
+    const processed = await sharp(buffer)
+      .resize(AVATAR_REQUIREMENTS.maxWidth, AVATAR_REQUIREMENTS.maxHeight, {
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({
+        quality: 85,
+        effort: 6, // Higher compression effort for better size optimization
+      })
+      .toBuffer();
+
+    // If size still exceeds max, try with lower quality
+    if (processed.length > AVATAR_REQUIREMENTS.maxSize) {
+      const reducedQuality = await sharp(buffer)
+        .resize(AVATAR_REQUIREMENTS.maxWidth, AVATAR_REQUIREMENTS.maxHeight, {
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .webp({
+          quality: 70,
+          effort: 6,
+        })
+        .toBuffer();
+
+      if (reducedQuality.length > AVATAR_REQUIREMENTS.maxSize) {
+        throw new Error("Image too large even after compression");
+      }
+
+      const metadata = await sharp(reducedQuality).metadata();
+
+      return {
+        buffer: reducedQuality,
+        width: metadata.width || AVATAR_REQUIREMENTS.maxWidth,
+        height: metadata.height || AVATAR_REQUIREMENTS.maxHeight,
+        format: AVATAR_REQUIREMENTS.format,
+        fileSize: reducedQuality.length,
+      };
+    }
+
+    const metadata = await sharp(processed).metadata();
+
+    return {
+      buffer: processed,
+      width: metadata.width || AVATAR_REQUIREMENTS.maxWidth,
+      height: metadata.height || AVATAR_REQUIREMENTS.maxHeight,
+      format: AVATAR_REQUIREMENTS.format,
+      fileSize: processed.length,
+    };
+  } catch (error) {
+    console.error("Avatar processing error:", error);
+    throw new Error(`Failed to process avatar: ${error.message}`);
+  }
+}
+
+interface AvatarUploadResult {
+  success: boolean;
+  url: string;
+  width: number;
+  height: number;
+  format: string;
+  fileSize: number;
+}
+
+export const uploadAvatar = async (
+  file: Express.Multer.File,
+  userId: string
+): Promise<AvatarUploadResult> => {
+  try {
+    // Validate file type
+    if (!file.mimetype.startsWith("image/")) {
+      throw new Error("Invalid file type. Only images are allowed.");
+    }
+
+    // Process the avatar
+    const processedAvatar = await processAvatar(file.buffer);
+
+    // Generate unique filename
+    const filename = `avatars/${userId}/${uuidv4()}.${processedAvatar.format}`;
+
+    // Upload to R2
+    const upload = new Upload({
+      client: s3Client,
+      params: {
+        Bucket: BUCKET_NAME,
+        Key: filename,
+        Body: processedAvatar.buffer,
+        ContentType: `image/${processedAvatar.format}`,
+        ACL: "public-read",
+        Metadata: {
+          "original-filename": file.originalname,
+          "user-id": userId,
+        },
+      },
+    });
+
+    const result = await upload.done();
+
+    return {
+      success: true,
+      url: `${config.cloudflare.r2.publicUrl}/${result.Key}`,
+      width: processedAvatar.width,
+      height: processedAvatar.height,
+      format: processedAvatar.format,
+      fileSize: processedAvatar.fileSize,
+    };
+  } catch (error) {
+    console.error("Avatar upload error:", error);
+    throw new Error(`Failed to upload avatar: ${error.message}`);
+  }
+};
+
+// Optional: Add a function to delete old avatars when updating
+export const deleteOldAvatar = async (
+  userId: string,
+  oldAvatarUrl: string
+): Promise<boolean> => {
+  if (!oldAvatarUrl) return true;
+
+  try {
+    // Extract key from URL
+    const key = oldAvatarUrl.replace(`${config.cloudflare.r2.publicUrl}/`, "");
+
+    // Only delete if it's in the user's avatar directory
+    if (!key.startsWith(`avatars/${userId}/`)) {
+      console.warn("Attempted to delete avatar from incorrect directory");
+      return false;
+    }
+
+    await s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: key,
+      })
+    );
+
+    return true;
+  } catch (error) {
+    console.error("Avatar deletion error:", error);
     return false;
   }
 };

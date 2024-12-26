@@ -1,82 +1,92 @@
 import { Request, Response } from "express";
-import jwt from "jsonwebtoken";
-import config from "../../config";
-import { JwtPayload } from "../../interfaces/jwt_payload_interface";
 import {
   sendErrorResponse,
   sendSuccessResponse,
 } from "../../utils/response_handler_util";
-import { generateAccessToken } from "../../utils/jwt_util";
+import {
+  prepareTokenRefreshResponse,
+  verifyRefreshToken,
+} from "../../utils/jwt_util";
 import User from "../../models/users_model";
 
 // This controller is responsible for refreshing the access token
 export const refreshToken = async (req: Request, res: Response) => {
-  const refreshToken =
-    req.cookies.refreshToken ||
-    req.body.refreshToken ||
-    req.headers["x-refresh-token"];
-
-  if (!refreshToken) {
-    return sendErrorResponse({
-      res: res,
-      message: "Refresh token not found",
-      errorCode: "UNAUTHORIZED",
-      errorDetails: "No refresh token provided in the request",
-      status: 401,
-    });
-  }
-
   try {
-    const decoded = jwt.verify(
-      refreshToken,
-      config.jwtSecret.refreshTokenSecret
-    ) as JwtPayload;
+    const refreshToken = req.header("X-Refresh-Token");
 
-    const user = await User.findById(decoded.user.id);
+    if (!refreshToken) {
+      return sendErrorResponse({
+        res,
+        message: "Refresh token is required",
+        errorCode: "REFRESH_TOKEN_REQUIRED",
+        errorDetails: "Please provide a valid refresh token to continue.",
+        status: 401,
+      });
+    }
+
+    // Verify the refresh token
+    const decoded = await verifyRefreshToken(refreshToken);
+
+    // Find and validate user
+    const user = await User.findOne({
+      _id: decoded.user.id,
+      isActivated: true,
+    });
+
     if (!user) {
       return sendErrorResponse({
-        res: res,
-        message: "User not found",
-        errorCode: "USER_NOT_FOUND",
-        errorDetails: "The user associated with this token no longer exists.",
-        status: 404,
-      });
-    }
-
-    // Generate new tokens
-    const accessToken = generateAccessToken(user.id, user.role);
-
-    // Send the new access token to the client
-    return sendSuccessResponse({
-      res: res,
-      message: "Access token refreshed",
-      data: { accessToken },
-      status: 200,
-    });
-  } catch (err) {
-    if (err instanceof jwt.TokenExpiredError) {
-      return sendErrorResponse({
-        res: res,
-        message: "Refresh token expired",
-        errorCode: "TOKEN_EXPIRED",
-        errorDetails: "The refresh token has expired. Please login again.",
-        status: 401,
-      });
-    } else if (err instanceof jwt.JsonWebTokenError) {
-      return sendErrorResponse({
-        res: res,
+        res,
         message: "Invalid refresh token",
-        errorCode: "INVALID_TOKEN",
-        errorDetails: "The provided refresh token is not valid.",
+        errorCode: "INVALID_REFRESH_TOKEN",
+        errorDetails: "User not found or account is inactive.",
         status: 401,
       });
     }
-    console.error("Refresh token error:", err);
+
+    // Generate only new access token
+    const { accessToken } = prepareTokenRefreshResponse(user);
+
+    return sendSuccessResponse({
+      res,
+      message: "Access token refreshed successfully",
+      data: {
+        accessToken,
+      },
+    });
+  } catch (error) {
+    // Handle rate limiter errors
+    if (error.name === "RateLimiterError") {
+      return sendErrorResponse({
+        res,
+        message: "Too many refresh attempts",
+        errorCode: "RATE_LIMIT_EXCEEDED",
+        errorDetails: "Please wait before trying again.",
+        status: 429,
+      });
+    }
+
+    // Handle token verification errors
+    if (
+      error.name === "JsonWebTokenError" ||
+      error.name === "TokenExpiredError"
+    ) {
+      return sendErrorResponse({
+        res,
+        message: "Invalid refresh token",
+        errorCode: "INVALID_REFRESH_TOKEN",
+        errorDetails: "Your session has expired. Please log in again.",
+        status: 401,
+      });
+    }
+
+    // Handle unexpected errors
+    console.error("Refresh token error:", error);
     return sendErrorResponse({
-      res: res,
-      message: "Server error",
-      errorCode: "INTERNAL_SERVER_ERROR",
-      errorDetails: "An unexpected error occurred while refreshing the token.",
+      res,
+      message: "Failed to refresh tokens",
+      errorCode: "REFRESH_TOKEN_ERROR",
+      errorDetails:
+        "An unexpected error occurred. Please try logging in again.",
       status: 500,
     });
   }

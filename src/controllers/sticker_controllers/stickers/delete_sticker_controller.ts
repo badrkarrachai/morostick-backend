@@ -7,7 +7,7 @@ import {
   sendSuccessResponse,
   sendErrorResponse,
 } from "../../../utils/response_handler_util";
-import { param } from "express-validator";
+import { body, param } from "express-validator";
 import { validateRequest } from "../../../utils/validations_util";
 
 // Validation rules for single sticker deletion
@@ -18,6 +18,11 @@ export const deleteStickerValidationRules = [
 // Validation rules for bulk sticker deletion
 export const bulkDeleteStickersValidationRules = [
   param("packId").isMongoId().withMessage("Invalid pack ID"),
+  body("stickerIds")
+    .exists()
+    .withMessage("Sticker IDs are required")
+    .isArray()
+    .withMessage("Invalid sticker IDs"),
 ];
 
 // Delete a single sticker
@@ -38,7 +43,7 @@ export const deleteSticker = async (req: Request, res: Response) => {
           : undefined,
         errorDetails: Array.isArray(validationErrors)
           ? validationErrors.join(", ")
-          : "Invalid input data",
+          : validationErrors,
         status: 400,
       });
     }
@@ -58,7 +63,6 @@ export const deleteSticker = async (req: Request, res: Response) => {
       });
     }
 
-    // Find associated pack and verify ownership
     const pack = await StickerPack.findById(sticker.packId);
     if (!pack) {
       return sendErrorResponse({
@@ -70,7 +74,7 @@ export const deleteSticker = async (req: Request, res: Response) => {
       });
     }
 
-    if (pack.creator._id.toString() !== userId) {
+    if (pack.creator.toString() !== userId) {
       return sendErrorResponse({
         res,
         message: "Unauthorized",
@@ -87,8 +91,20 @@ export const deleteSticker = async (req: Request, res: Response) => {
     ];
     await Promise.all(deletePromises);
 
-    // Remove sticker from pack
+    // Get sticker's current position
+    const deletedPosition = sticker.position;
+
+    // Remove sticker from pack and update positions
     await pack.removeSticker(sticker.id);
+
+    // Update positions of remaining stickers
+    await Sticker.updateMany(
+      {
+        packId: pack._id,
+        position: { $gt: deletedPosition },
+      },
+      { $inc: { position: -1 } }
+    );
 
     // Delete sticker document
     await sticker.deleteOne();
@@ -130,7 +146,7 @@ export const bulkDeleteStickers = async (req: Request, res: Response) => {
           : undefined,
         errorDetails: Array.isArray(validationErrors)
           ? validationErrors.join(", ")
-          : "Invalid input data",
+          : validationErrors,
         status: 400,
       });
     }
@@ -161,7 +177,6 @@ export const bulkDeleteStickers = async (req: Request, res: Response) => {
       });
     }
 
-    // Find pack and verify ownership
     const pack = await StickerPack.findById(packId);
     if (!pack) {
       return sendErrorResponse({
@@ -173,7 +188,7 @@ export const bulkDeleteStickers = async (req: Request, res: Response) => {
       });
     }
 
-    if (pack.creator._id.toString() !== userId) {
+    if (pack.creator.toString() !== userId) {
       return sendErrorResponse({
         res,
         message: "Unauthorized",
@@ -184,11 +199,11 @@ export const bulkDeleteStickers = async (req: Request, res: Response) => {
       });
     }
 
-    // Find all stickers to be deleted
+    // Find all stickers to be deleted and sort by position
     const stickers = await Sticker.find({
       _id: { $in: stickerIds },
       packId: packId,
-    });
+    }).sort({ position: 1 });
 
     // Delete files from storage
     const deletePromises = stickers.flatMap((sticker) => [
@@ -197,16 +212,27 @@ export const bulkDeleteStickers = async (req: Request, res: Response) => {
     ]);
     await Promise.all(deletePromises);
 
-    // Remove stickers from pack
+    // Remove stickers and update positions
     for (const sticker of stickers) {
       await pack.removeSticker(sticker.id);
     }
 
-    // Delete sticker documents
-    await Sticker.deleteMany({
-      _id: { $in: stickerIds },
-      packId: packId,
+    // Reorder remaining stickers to ensure sequential positions
+    const remainingStickers = await Sticker.find({ packId: pack._id }).sort({
+      position: 1,
     });
+
+    // Update positions of all remaining stickers
+    const bulkOps = remainingStickers.map((sticker, index) => ({
+      updateOne: {
+        filter: { _id: sticker._id },
+        update: { $set: { position: index } },
+      },
+    }));
+
+    if (bulkOps.length > 0) {
+      await Sticker.bulkWrite(bulkOps);
+    }
 
     return sendSuccessResponse({
       res,

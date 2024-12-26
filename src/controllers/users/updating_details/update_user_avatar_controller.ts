@@ -1,113 +1,171 @@
-// src/controllers/userController.ts
 import { Request, Response } from "express";
+import { Types } from "mongoose";
 import User from "../../../models/users_model";
-import Image from "../../../models/image_model";
+import Image, { IImages } from "../../../models/image_model";
+import { uploadAvatar, deleteOldAvatar } from "../../../utils/storage_util";
 import {
   sendSuccessResponse,
   sendErrorResponse,
 } from "../../../utils/response_handler_util";
-import { Types } from "mongoose";
-import { formatImageData } from "../../../utils/responces_templates/image_response_template";
+import { IUser } from "../../../interfaces/user_interface";
 
-// Controller to update user profile picture
-export const updateUserProfilePicture = async (req: Request, res: Response) => {
-  const userId = req.user.id;
-  const { imageId } = req.body;
+interface UserWithPopulatedAvatar extends Omit<IUser, "avatar"> {
+  avatar?: IImages;
+}
 
+export const updateUserAvatar = async (req: Request, res: Response) => {
   try {
-    // Validate the image ID
-    if (!Types.ObjectId.isValid(imageId)) {
+    const userId = req.user.id;
+
+    if (!req.file) {
       return sendErrorResponse({
         res,
-        message: "Invalid image ID",
-        errorCode: "INVALID_IMAGE_ID",
-        errorDetails: "The provided image ID is not valid.",
+        message: "No file uploaded",
+        errorCode: "NO_FILE",
+        errorDetails: "Please provide an avatar image file",
         status: 400,
       });
     }
 
-    // Find the uploaded image
-    const image = await Image.findById(imageId);
-    if (!image) {
-      return sendErrorResponse({
-        res,
-        message: "Image not found",
-        errorCode: "IMAGE_NOT_FOUND",
-        errorDetails: "The image with the specified ID does not exist.",
-        status: 404,
-      });
-    }
-
-    // Find the user and update their avatar field
-    const user = await User.findById(userId);
+    // Get user and their current avatar
+    const user = await User.findById(userId).populate<UserWithPopulatedAvatar>(
+      "avatar"
+    );
     if (!user) {
       return sendErrorResponse({
         res,
         message: "User not found",
         errorCode: "USER_NOT_FOUND",
-        errorDetails:
-          "There is no session with this user id, please login again.",
+        errorDetails: "The requested user does not exist",
         status: 404,
       });
     }
 
-    // Update the user's avatar with the image ID
-    user.avatar = image.id;
+    // Upload new avatar to R2
+    const uploadResult = await uploadAvatar(req.file, userId);
+
+    // Create new image document
+    const newImage = new Image({
+      userId: new Types.ObjectId(userId),
+      name: `${user.name}'s avatar`,
+      url: uploadResult.url,
+    });
+    await newImage.save();
+
+    // If user has an existing avatar, handle cleanup
+    if (user.avatar) {
+      // Delete old avatar from R2
+      await deleteOldAvatar(userId, user.avatar.url);
+
+      // Mark old avatar image as deleted in database
+      await Image.findByIdAndUpdate(user.avatar._id, {
+        isDeleted: true,
+        deletedAt: new Date(),
+      });
+    }
+
+    // Update user's avatar reference
+    user.avatar = newImage.id;
     await user.save();
 
     return sendSuccessResponse({
       res,
-      message: "Profile picture updated successfully",
-      data: formatImageData(image),
       status: 200,
+      message: "Avatar updated successfully",
+      data: {
+        avatarId: newImage._id,
+        avatarUrl: uploadResult.url,
+        width: uploadResult.width,
+        height: uploadResult.height,
+        format: uploadResult.format,
+        fileSize: uploadResult.fileSize,
+      },
     });
   } catch (error) {
-    console.error("Error updating profile picture:", error);
+    console.error("Avatar update error:", error);
     return sendErrorResponse({
       res,
-      message: "Server error",
-      errorCode: "SERVER_ERROR",
-      errorDetails: "An error occurred while updating the profile picture.",
+      message: "Failed to update avatar",
+      errorCode: "AVATAR_UPDATE_ERROR",
+      errorDetails:
+        error.message ||
+        "An unexpected error occurred while updating the avatar",
       status: 500,
     });
   }
 };
 
-// Controller to remove user profile picture
-export const removeUserProfilePicture = async (req: Request, res: Response) => {
-  const userId = req.user.id;
-
+export const deleteUserAvatar = async (req: Request, res: Response) => {
   try {
-    // Find the user and update their avatar field
-    const user = await User.findById(userId);
+    const userId = req.user.id;
+
+    // Get user and their current avatar
+    const user = await User.findById(userId).populate<UserWithPopulatedAvatar>(
+      "avatar"
+    );
     if (!user) {
       return sendErrorResponse({
         res,
         message: "User not found",
         errorCode: "USER_NOT_FOUND",
-        errorDetails:
-          "There is no session with this user id, please login again.",
+        errorDetails: "The requested user does not exist",
         status: 404,
       });
     }
 
-    // Update the user's avatar with the image ID
-    user.avatar = null;
+    // Check if user has an avatar
+    if (!user.avatar) {
+      return sendErrorResponse({
+        res,
+        message: "No avatar to delete",
+        errorCode: "NO_AVATAR",
+        errorDetails: "User does not have an avatar to delete",
+        status: 400,
+      });
+    }
+
+    // Delete avatar from R2
+    const deleteResult = await deleteOldAvatar(userId, user.avatar.url);
+    if (!deleteResult) {
+      return sendErrorResponse({
+        res,
+        message: "Failed to delete avatar",
+        errorCode: "AVATAR_DELETE_ERROR",
+        errorDetails: "Failed to delete avatar from storage",
+        status: 500,
+      });
+    }
+
+    // Mark image as deleted in database
+    await Image.findByIdAndUpdate(user.avatar._id, {
+      isDeleted: true,
+      deletedAt: new Date(),
+    });
+
+    // Remove avatar reference from user
+    user.avatar = undefined;
     await user.save();
 
     return sendSuccessResponse({
       res,
-      message: "Profile picture removed successfully",
       status: 200,
+      message: "Avatar deleted successfully",
     });
   } catch (error) {
-    console.error("Error removing profile picture:", error);
+    console.error("Avatar deletion error:", error);
     return sendErrorResponse({
       res,
-      message: "Server error",
-      errorCode: "SERVER_ERROR",
-      errorDetails: "An error occurred while removing the profile picture.",
+      message: "Failed to delete avatar",
+      errorCode: "AVATAR_DELETE_ERROR",
+      errorDetails:
+        error.message ||
+        "An unexpected error occurred while deleting the avatar",
       status: 500,
     });
   }
+};
+
+export default {
+  updateUserAvatar,
+  deleteUserAvatar,
 };

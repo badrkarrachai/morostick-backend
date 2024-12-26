@@ -11,13 +11,14 @@ import {
   requestVerifyUserEmail,
   verifyUserEmailViaOTP,
 } from "../../controllers/users/updating_details/verify_user_email_controller";
-import {
-  removeUserProfilePicture,
-  updateUserProfilePicture,
-} from "../../controllers/users/updating_details/update_user_avatar_controller";
 import { checkAccountNotDeleted } from "../middlewares/check_account_deleted_middleware";
 import { checkAccountActivated } from "../middlewares/check_account_activated_middleware";
 import { auth } from "../middlewares/auth_middleware";
+import { uploadAvatarFile } from "../middlewares/sticker_upload_middleware";
+import {
+  deleteUserAvatar,
+  updateUserAvatar,
+} from "../../controllers/users/updating_details/update_user_avatar_controller";
 
 const router = Router();
 
@@ -41,12 +42,7 @@ router.post(
   requestVerifyUserEmail
 );
 router.post("/verify-user-email", auth, checkAD, verifyUserEmailViaOTP);
-router.put("/update-profile-picture", auth, checkAD, updateUserProfilePicture);
-router.delete(
-  "/delete-profile-picture",
-  auth,
-  checkAD,
-  removeUserProfilePicture
-);
+router.put("/update-profile-picture", auth, uploadAvatarFile, updateUserAvatar);
+router.delete("/delete-profile-picture", auth, deleteUserAvatar);
 
 export default router;

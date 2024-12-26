@@ -8,6 +8,7 @@ import {
 import { validateRequest } from "../../../utils/validations_util";
 import { param } from "express-validator";
 import { deleteFromStorage } from "../../../utils/storage_util";
+import User from "../../../models/users_model";
 
 // Helper function for deleting sticker files
 async function deleteStickerFiles(sticker: any) {
@@ -46,7 +47,9 @@ export const deletePack = async (req: Request, res: Response) => {
         errorFields: Array.isArray(validationErrors)
           ? validationErrors
           : undefined,
-        errorDetails: "Invalid pack ID format.",
+        errorDetails: Array.isArray(validationErrors)
+          ? validationErrors.join(", ")
+          : validationErrors,
         status: 400,
       });
     }
@@ -64,7 +67,7 @@ export const deletePack = async (req: Request, res: Response) => {
     }
 
     // Check ownership
-    if (pack.creator._id.toString() !== userId) {
+    if (pack.creator.toString() !== userId) {
       return sendErrorResponse({
         res,
         message: "Unauthorized",
@@ -100,6 +103,13 @@ export const deletePack = async (req: Request, res: Response) => {
 
     // Delete the pack
     await pack.deleteOne();
+
+    // Remove pack from user
+    await User.findByIdAndUpdate(userId, {
+      $pull: {
+        packs: packId,
+      },
+    });
 
     // If some files failed to delete but the pack was deleted
     if (failedDeletions.length > 0) {

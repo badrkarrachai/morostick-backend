@@ -27,7 +27,9 @@ export const updateUserPassword = async (req: Request, res: Response) => {
         res,
         message: "Invalid input",
         errorCode: "INVALID_INPUT",
-        errorDetails: validationErrors,
+        errorDetails: Array.isArray(validationErrors)
+          ? validationErrors.join(", ")
+          : validationErrors,
         status: 400,
       });
     }

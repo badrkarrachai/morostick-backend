@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import User from "../../models/users_model";
-import { prepareJWTTokensForAuth } from "../../utils/jwt_util";
+import { prepareMobileAuthResponse } from "../../utils/jwt_util";
 import config from "../../config";
 import bcrypt from "bcrypt";
 import {
@@ -33,7 +33,9 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
         res,
         message: "Invalid input",
         errorCode: "INVALID_INPUT",
-        errorDetails: validationErrors,
+        errorDetails: Array.isArray(validationErrors)
+          ? validationErrors.join(", ")
+          : validationErrors,
         status: 400,
       });
     }
@@ -104,7 +106,9 @@ export const resetPassword = async (req: Request, res: Response) => {
         res,
         message: "Invalid input",
         errorCode: "INVALID_INPUT",
-        errorDetails: validationErrors,
+        errorDetails: Array.isArray(validationErrors)
+          ? validationErrors.join(", ")
+          : validationErrors,
         status: 400,
       });
     }
@@ -187,7 +191,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     await user.save();
 
     // Generate JWT tokens
-    const accessToken = prepareJWTTokensForAuth(user, res);
+    const tokens = prepareMobileAuthResponse(user);
 
     // Prepare user data for response
     const userData = await formatUserData(user, messagesForUser);
@@ -196,7 +200,7 @@ export const resetPassword = async (req: Request, res: Response) => {
       res: res,
       message: "Password reset successful",
       data: {
-        accessToken,
+        ...tokens,
         user: userData,
       },
       status: 200,
