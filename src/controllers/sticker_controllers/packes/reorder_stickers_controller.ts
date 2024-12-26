@@ -48,7 +48,9 @@ export const reorderStickers = async (req: Request, res: Response) => {
         errorFields: Array.isArray(validationErrors)
           ? validationErrors
           : undefined,
-        errorDetails: validationErrors,
+        errorDetails: Array.isArray(validationErrors)
+          ? validationErrors.join(", ")
+          : validationErrors,
         status: 400,
       });
     }

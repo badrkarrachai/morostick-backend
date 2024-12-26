@@ -57,8 +57,8 @@ const userSchema = new Schema<IUser>(
     tokenExpiresAt: { type: Date },
     // Sticker and Packs
     stickers: [{ type: Types.ObjectId, ref: "Sticker" }],
-    packs: [{ type: Types.ObjectId, ref: "StickerPack" }],
-    favoritesPacks: [{ type: Types.ObjectId, ref: "StickerPack" }],
+    packs: [{ type: Types.ObjectId, ref: "Pack" }],
+    favoritesPacks: [{ type: Types.ObjectId, ref: "Pack" }],
     favoritesStickers: [{ type: Types.ObjectId, ref: "Sticker" }],
   },
   {

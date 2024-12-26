@@ -13,7 +13,6 @@ export interface ISticker extends Document {
   emojis: string[];
   thumbnailUrl: string;
   webpUrl: string;
-  tags: string[];
   isAnimated: boolean;
   fileSize: number;
   creator: Types.ObjectId;

@@ -47,7 +47,9 @@ export const deletePack = async (req: Request, res: Response) => {
         errorFields: Array.isArray(validationErrors)
           ? validationErrors
           : undefined,
-        errorDetails: "Invalid pack ID format.",
+        errorDetails: Array.isArray(validationErrors)
+          ? validationErrors.join(", ")
+          : validationErrors,
         status: 400,
       });
     }

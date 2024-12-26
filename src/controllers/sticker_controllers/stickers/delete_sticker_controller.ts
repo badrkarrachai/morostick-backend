@@ -43,7 +43,7 @@ export const deleteSticker = async (req: Request, res: Response) => {
           : undefined,
         errorDetails: Array.isArray(validationErrors)
           ? validationErrors.join(", ")
-          : "Invalid input data",
+          : validationErrors,
         status: 400,
       });
     }

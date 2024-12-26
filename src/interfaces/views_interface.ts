@@ -51,7 +51,6 @@ export interface StickerView {
   emojis: string[];
   thumbnailUrl: string;
   webpUrl: string;
-  tags: string[];
   isAnimated: boolean;
   fileSize: number;
   creator: CreatorView;

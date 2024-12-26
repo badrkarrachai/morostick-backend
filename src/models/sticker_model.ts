@@ -70,15 +70,6 @@ const StickerSchema = new Schema<ISticker>(
       required: true,
       trim: true,
     },
-    tags: {
-      type: [String],
-      default: [],
-      validate: {
-        validator: (tags: string[]) =>
-          tags.length <= STICKER_REQUIREMENTS.maxTags,
-        message: `Maximum ${STICKER_REQUIREMENTS.maxTags} tags allowed per sticker`,
-      },
-    },
     isAnimated: {
       type: Boolean,
       required: true,

@@ -33,7 +33,9 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
         res,
         message: "Invalid input",
         errorCode: "INVALID_INPUT",
-        errorDetails: validationErrors,
+        errorDetails: Array.isArray(validationErrors)
+          ? validationErrors.join(", ")
+          : validationErrors,
         status: 400,
       });
     }
@@ -104,7 +106,9 @@ export const resetPassword = async (req: Request, res: Response) => {
         res,
         message: "Invalid input",
         errorCode: "INVALID_INPUT",
-        errorDetails: validationErrors,
+        errorDetails: Array.isArray(validationErrors)
+          ? validationErrors.join(", ")
+          : validationErrors,
         status: 400,
       });
     }

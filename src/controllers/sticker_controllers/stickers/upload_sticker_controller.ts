@@ -28,20 +28,32 @@ export const uploadStickerValidationRules = [
     .isLength({ max: 128 })
     .withMessage("Sticker name cannot exceed 128 characters"),
   body("emojis").notEmpty().withMessage("Emojis are required"),
+  // Modified categoryIds validation to handle both string and array inputs
   body("categoryIds")
     .optional()
-    .isArray()
-    .withMessage("Category IDs must be an array"),
-  body("categoryIds.*")
-    .optional()
-    .isMongoId()
-    .withMessage("Invalid category ID format"),
+    .custom((value) => {
+      if (!value) return true;
+      try {
+        const parsed = typeof value === "string" ? JSON.parse(value) : value;
+        return Array.isArray(parsed);
+      } catch (error) {
+        return false;
+      }
+    })
+    .withMessage("Category IDs must be a valid array"),
+  // Modified categoryName validation to handle both string and array inputs
   body("categoryName")
     .optional()
-    .isString()
-    .trim()
-    .isLength({ min: 2, max: 50 })
-    .withMessage("Category name must be between 2 and 50 characters"),
+    .custom((value) => {
+      if (!value) return true;
+      try {
+        const parsed = typeof value === "string" ? JSON.parse(value) : value;
+        return Array.isArray(parsed) || typeof value === "string";
+      } catch (error) {
+        return typeof value === "string";
+      }
+    })
+    .withMessage("Category name must be a string or an array of strings"),
 ];
 
 export const uploadSticker = async (req: Request, res: Response) => {
@@ -50,7 +62,6 @@ export const uploadSticker = async (req: Request, res: Response) => {
     const { packId } = req.params;
     const { name, categoryIds, categoryName } = req.body;
     let emojis;
-    let tags;
 
     // Validate and parse emojis
     try {
@@ -76,29 +87,6 @@ export const uploadSticker = async (req: Request, res: Response) => {
       });
     }
 
-    // Validate and parse tags
-    try {
-      tags = req.body.tags
-        ? Array.isArray(req.body.tags)
-          ? req.body.tags
-          : JSON.parse(req.body.tags)
-        : [];
-
-      if (!Array.isArray(tags) || tags.length > STICKER_REQUIREMENTS.maxTags) {
-        throw new Error(
-          `Invalid tags format or exceeds maximum of ${STICKER_REQUIREMENTS.maxTags} tags`
-        );
-      }
-    } catch (error) {
-      return sendErrorResponse({
-        res,
-        message: "Invalid tags format",
-        errorCode: "INVALID_TAGS",
-        errorDetails: error.message,
-        status: 400,
-      });
-    }
-
     // Validate request
     const validationErrors = await validateRequest(
       req,
@@ -116,7 +104,7 @@ export const uploadSticker = async (req: Request, res: Response) => {
           : undefined,
         errorDetails: Array.isArray(validationErrors)
           ? validationErrors.join(", ")
-          : "The provided data is invalid.",
+          : validationErrors,
         status: 400,
       });
     }
@@ -164,23 +152,71 @@ export const uploadSticker = async (req: Request, res: Response) => {
       });
     }
 
-    // Handle categories assignment
-    let stickerCategories: Types.ObjectId[] = [];
+    // Parse categoryIds
+    let parsedCategoryIds: string[] = [];
+    if (categoryIds) {
+      try {
+        parsedCategoryIds = Array.isArray(categoryIds)
+          ? categoryIds
+          : JSON.parse(categoryIds);
 
-    // Use pack categories as base
-    if (pack.categories && pack.categories.length > 0) {
-      stickerCategories = pack.categories.map((cat) => cat._id);
+        if (!Array.isArray(parsedCategoryIds)) {
+          return sendErrorResponse({
+            res,
+            message: "Invalid category IDs format",
+            errorCode: "INVALID_CATEGORIES",
+            errorDetails: "Category IDs must be an array",
+            status: 400,
+          });
+        }
+      } catch (error) {
+        return sendErrorResponse({
+          res,
+          message: "Invalid category IDs format",
+          errorCode: "INVALID_CATEGORIES",
+          errorDetails: "Failed to parse category IDs",
+          status: 400,
+        });
+      }
     }
 
-    // Handle provided category IDs
-    if (Array.isArray(categoryIds) && categoryIds.length > 0) {
-      const categoryObjectIds = categoryIds.map((id) => new Types.ObjectId(id));
+    // Parse categoryNames
+    let parsedCategoryNames: string[] = [];
+    if (categoryName) {
+      try {
+        parsedCategoryNames = Array.isArray(categoryName)
+          ? categoryName
+          : JSON.parse(categoryName);
+
+        if (!Array.isArray(parsedCategoryNames)) {
+          return sendErrorResponse({
+            res,
+            message: "Invalid category names format",
+            errorCode: "INVALID_CATEGORIES",
+            errorDetails: "Category names must be an array",
+            status: 400,
+          });
+        }
+      } catch (error) {
+        // If parsing fails, treat it as a single category name
+        parsedCategoryNames = [categoryName];
+      }
+    }
+
+    // Initialize empty categories array
+    let stickerCategories: Types.ObjectId[] = [];
+
+    // First try user provided category IDs
+    if (parsedCategoryIds.length > 0) {
+      const categoryObjectIds = parsedCategoryIds.map(
+        (id) => new Types.ObjectId(id)
+      );
       const categories = await Category.find({
         _id: { $in: categoryObjectIds },
         isActive: true,
       });
 
-      if (categories.length !== categoryIds.length) {
+      if (categories.length !== parsedCategoryIds.length) {
         return sendErrorResponse({
           res,
           message: "Invalid categories",
@@ -190,31 +226,45 @@ export const uploadSticker = async (req: Request, res: Response) => {
         });
       }
 
-      categories.forEach((cat) => {
-        if (
-          !stickerCategories.some((existingId) => existingId.equals(cat.id))
-        ) {
-          stickerCategories.push(cat.id);
-        }
-      });
+      stickerCategories = categories.map((cat) => cat.id);
     }
-    // Handle category name if provided
-    else if (categoryName) {
-      const categoryId = await createCategoryFromName(
-        categoryName.trim(),
-        true
-      );
-      if (
-        !stickerCategories.some((existingId) => existingId.equals(categoryId))
-      ) {
-        stickerCategories.push(categoryId);
+    // Then try category names if no valid IDs were provided
+    else if (parsedCategoryNames.length > 0) {
+      try {
+        const categoryPromises = parsedCategoryNames.map((name) =>
+          createCategoryFromName(name.trim(), true)
+        );
+        const categoryIds = await Promise.all(categoryPromises);
+        stickerCategories = categoryIds;
+      } catch (error) {
+        return sendErrorResponse({
+          res,
+          message: "Failed to create categories",
+          errorCode: "CATEGORY_CREATION_FAILED",
+          errorDetails: error.message,
+          status: 400,
+        });
       }
     }
-
-    // Create category from sticker name if no categories are assigned
-    if (stickerCategories.length === 0) {
+    // If no user categories were provided, use pack categories as fallback
+    else if (pack.categories && pack.categories.length > 0) {
+      stickerCategories = pack.categories.map((cat) => cat._id);
+    }
+    // Last resort: create category from sticker name
+    else {
       const categoryId = await createCategoryFromName(name.trim(), true);
-      stickerCategories.push(categoryId);
+      stickerCategories = [categoryId];
+    }
+
+    // Validate final categories array
+    if (stickerCategories.length === 0) {
+      return sendErrorResponse({
+        res,
+        message: "No valid categories",
+        errorCode: "NO_CATEGORIES",
+        errorDetails: "Sticker must have at least one category",
+        status: 400,
+      });
     }
 
     // Validate sticker count
@@ -270,7 +320,6 @@ export const uploadSticker = async (req: Request, res: Response) => {
       emojis,
       thumbnailUrl: uploadResult.url,
       webpUrl: uploadResult.url,
-      tags: tags.slice(0, STICKER_REQUIREMENTS.maxTags),
       isAnimated: uploadResult.isAnimated,
       fileSize: uploadResult.fileSize,
       creator: new Types.ObjectId(userId),

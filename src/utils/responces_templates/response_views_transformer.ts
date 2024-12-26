@@ -13,6 +13,7 @@ import {
 import { StickerPack } from "../../models/pack_model";
 import { Category } from "../../models/category_model";
 import { Sticker } from "../../models/sticker_model";
+import { PACK_REQUIREMENTS } from "../../config/app_requirement";
 
 type Lean<T> = mongoose.FlattenMaps<T>;
 
@@ -73,7 +74,8 @@ export function transformCategory(category: Lean<ICategory>): CategoryView {
  * Transform a pack document into a PackView
  */
 export async function transformPack(
-  input: string | Types.ObjectId | Document
+  input: string | Types.ObjectId | Document,
+  stickersLimit?: number
 ): Promise<PackView | null> {
   try {
     const populatedPack = await StickerPack.findById(
@@ -91,6 +93,9 @@ export async function transformPack(
       })
       .populate({
         path: "stickers",
+        options: {
+          limit: stickersLimit ?? PACK_REQUIREMENTS.maxPreviewStickers,
+        },
         populate: [
           {
             path: "creator",
@@ -162,7 +167,6 @@ export async function transformSticker(
       emojis: populatedSticker.emojis,
       thumbnailUrl: populatedSticker.thumbnailUrl,
       webpUrl: populatedSticker.webpUrl,
-      tags: populatedSticker.tags,
       isAnimated: populatedSticker.isAnimated,
       fileSize: populatedSticker.fileSize,
       creator: transformCreator(populatedSticker.creator),
