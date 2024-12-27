@@ -6,7 +6,7 @@ interface IBasicPack {
   name: string;
   description?: string;
   trayIcon?: string;
-  creator: Types.ObjectId[];
+  creator: Types.ObjectId;
   stickers: Types.ObjectId[];
   isPrivate: boolean;
   isAuthorized: boolean;

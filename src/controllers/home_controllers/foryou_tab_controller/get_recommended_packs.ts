@@ -21,6 +21,16 @@ interface UserPreferences {
   categoryWeights: Record<string, number>;
 }
 
+// Helper function to get a random number within a range
+const getRandomInRange = (min: number, max: number): number => {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+};
+
+// Helper function to get a random weight multiplier
+const getRandomWeight = (): number => {
+  return Math.random() * 0.5 + 0.75; // Returns a value between 0.75 and 1.25
+};
+
 async function analyzeUserPreferences(
   userId: string
 ): Promise<UserPreferences | null> {
@@ -48,34 +58,37 @@ async function analyzeUserPreferences(
   let animatedCount = 0;
   let totalItems = 0;
 
-  // Process user's own and favorite packs
+  // Randomize base weights for different interaction types
+  const packWeight = getRandomInRange(2, 4);
+  const stickerWeight = getRandomInRange(1, 2);
+
   [...(user.packs || []), ...(user.favoritesPacks || [])].forEach((pack) => {
-    // Process categories with higher weight for direct interactions
     pack.categories.forEach((cat) => {
       const catId = cat.toString();
-      categoryWeights[catId] = (categoryWeights[catId] || 0) + 3;
+      const randomMultiplier = getRandomWeight();
+      categoryWeights[catId] =
+        (categoryWeights[catId] || 0) + packWeight * randomMultiplier;
     });
 
-    // Process creators
-    pack.creator.forEach((creator) => creators.add(creator.toString()));
+    creators.add(pack.creator.toString());
 
-    // Extract keywords from name and description
     const terms = [
       ...(pack.name?.toLowerCase().split(/\W+/) || []),
       ...(pack.description?.toLowerCase().split(/\W+/) || []),
-    ].filter((term) => term.length > 2); // Filter out short terms
+    ].filter((term) => term.length > 2);
     terms.forEach((term) => keywords.add(term));
 
     if (pack.isAnimatedPack) animatedCount++;
     totalItems++;
   });
 
-  // Process stickers with lower weight
   [...(user.stickers || []), ...(user.favoritesStickers || [])].forEach(
     (sticker) => {
       sticker.categories.forEach((cat) => {
         const catId = cat.toString();
-        categoryWeights[catId] = (categoryWeights[catId] || 0) + 1;
+        const randomMultiplier = getRandomWeight();
+        categoryWeights[catId] =
+          (categoryWeights[catId] || 0) + stickerWeight * randomMultiplier;
       });
 
       if (sticker.isAnimated) animatedCount++;
@@ -83,13 +96,16 @@ async function analyzeUserPreferences(
     }
   );
 
+  // Add small random variation to animated preference threshold
+  const animatedThreshold = 0.5 + (Math.random() * 0.1 - 0.05); // 45-55% threshold
+
   return {
     categories: Object.keys(categoryWeights).map(
       (id) => new Types.ObjectId(id)
     ),
     creators: Array.from(creators),
     keywords: Array.from(keywords),
-    isAnimatedPreferred: animatedCount > totalItems / 2,
+    isAnimatedPreferred: animatedCount > totalItems * animatedThreshold,
     categoryWeights,
   };
 }
@@ -100,7 +116,11 @@ export const getRecommendedPacks = async (
   let pipeline: PipelineStage[];
 
   if (!userId) {
-    // Default pipeline for users without ID
+    // Randomized default pipeline
+    const yearWeight = getRandomInRange(5, 15);
+    const categoryWeight = getRandomInRange(1, 3);
+    const stickerWeight = getRandomInRange(1, 3);
+
     pipeline = [
       {
         $match: {
@@ -112,28 +132,30 @@ export const getRecommendedPacks = async (
         $addFields: {
           defaultScore: {
             $add: [
-              { $size: "$categories" }, // Favor packs with more categories
-              { $size: "$stickers" }, // Favor complete packs
+              { $multiply: [{ $size: "$categories" }, categoryWeight] },
+              { $multiply: [{ $size: "$stickers" }, stickerWeight] },
               {
                 $multiply: [
                   {
                     $subtract: [{ $year: "$createdAt" }, 2020],
                   },
-                  10,
+                  yearWeight,
                 ],
               },
+              { $multiply: [{ $rand: {} }, getRandomInRange(20, 50)] }, // Random factor
             ],
           },
         },
       },
       { $sort: { defaultScore: -1 } },
-      { $limit: 5 },
+      { $limit: getRandomInRange(5, 8) }, // Randomized result count
     ];
   } else {
     const userPreferences = await analyzeUserPreferences(userId);
 
     if (!userPreferences) {
-      // Fallback pipeline for users without preferences
+      // Randomized fallback pipeline
+      const yearWeight = getRandomInRange(5, 15);
       pipeline = [
         {
           $match: {
@@ -150,25 +172,34 @@ export const getRecommendedPacks = async (
           $addFields: {
             defaultScore: {
               $add: [
-                { $size: "$categories" },
-                { $size: "$stickers" },
+                {
+                  $multiply: [{ $size: "$categories" }, getRandomInRange(1, 3)],
+                },
+                { $multiply: [{ $size: "$stickers" }, getRandomInRange(1, 3)] },
                 {
                   $multiply: [
                     {
                       $subtract: [{ $year: "$createdAt" }, 2020],
                     },
-                    10,
+                    yearWeight,
                   ],
                 },
+                { $multiply: [{ $rand: {} }, getRandomInRange(20, 50)] },
               ],
             },
           },
         },
         { $sort: { defaultScore: -1 } },
-        { $limit: 5 },
+        { $limit: getRandomInRange(5, 8) },
       ];
     } else {
-      const pipeline: PipelineStage[] = [
+      // Randomize weights for different factors
+      const categoryBaseWeight = getRandomInRange(40, 60);
+      const creatorWeight = getRandomInRange(250, 350);
+      const animationWeight = getRandomInRange(150, 250);
+      const keywordWeight = getRandomInRange(40, 60);
+
+      pipeline = [
         {
           $match: {
             isPrivate: false,
@@ -182,7 +213,6 @@ export const getRecommendedPacks = async (
         },
         {
           $addFields: {
-            // Extract terms from pack name and description
             terms: {
               $concat: [
                 { $toLower: "$name" },
@@ -196,7 +226,6 @@ export const getRecommendedPacks = async (
           $addFields: {
             recommendationScore: {
               $add: [
-                // Category matching score (highest priority)
                 {
                   $reduce: {
                     input: "$categories",
@@ -216,7 +245,7 @@ export const getRecommendedPacks = async (
                                     },
                                   },
                                 },
-                                50, // Base weight for category matches
+                                categoryBaseWeight,
                               ],
                             },
                             0,
@@ -226,7 +255,6 @@ export const getRecommendedPacks = async (
                     },
                   },
                 },
-                // Creator preference (high priority)
                 {
                   $cond: {
                     if: {
@@ -237,11 +265,10 @@ export const getRecommendedPacks = async (
                         ),
                       ],
                     },
-                    then: 300,
+                    then: creatorWeight,
                     else: 0,
                   },
                 },
-                // Animation preference (medium priority)
                 {
                   $cond: {
                     if: {
@@ -250,11 +277,10 @@ export const getRecommendedPacks = async (
                         userPreferences.isAnimatedPreferred,
                       ],
                     },
-                    then: 200,
+                    then: animationWeight,
                     else: 0,
                   },
                 },
-                // Keyword matching (lower priority)
                 {
                   $multiply: [
                     {
@@ -265,15 +291,16 @@ export const getRecommendedPacks = async (
                         ],
                       },
                     },
-                    50,
+                    keywordWeight,
                   ],
                 },
+                { $multiply: [{ $rand: {} }, getRandomInRange(20, 50)] }, // Random factor
               ],
             },
           },
         },
         { $sort: { recommendationScore: -1 } },
-        { $limit: 5 },
+        { $limit: getRandomInRange(5, 8) },
       ];
     }
   }
@@ -282,7 +309,6 @@ export const getRecommendedPacks = async (
     const packs = await StickerPack.aggregate(pipeline);
 
     if (packs.length === 0) {
-      // Final fallback: get any valid packs if all other methods return empty
       const fallbackPacks = await StickerPack.aggregate([
         {
           $match: {
@@ -297,15 +323,13 @@ export const getRecommendedPacks = async (
             }),
           },
         },
-        { $sample: { size: 5 } },
+        { $sample: { size: getRandomInRange(5, 8) } },
       ]);
       return transformPacks(fallbackPacks);
     }
 
     return transformPacks(packs);
   } catch (error) {
-    console.error("Error in getRecommendedPacks:", error);
-    // Ultimate fallback: get any 5 random valid packs
     const emergencyPacks = await StickerPack.aggregate([
       {
         $match: {
@@ -313,7 +337,7 @@ export const getRecommendedPacks = async (
           isAuthorized: true,
         },
       },
-      { $sample: { size: 5 } },
+      { $sample: { size: getRandomInRange(5, 8) } },
     ]);
     return transformPacks(emergencyPacks);
   }

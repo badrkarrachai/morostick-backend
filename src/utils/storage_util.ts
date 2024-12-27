@@ -346,24 +346,25 @@ interface ProcessedAvatar {
 
 async function processAvatar(buffer: Buffer): Promise<ProcessedAvatar> {
   try {
-    const processed = await sharp(buffer)
-      .resize(AVATAR_REQUIREMENTS.maxWidth, AVATAR_REQUIREMENTS.maxHeight, {
-        fit: "inside",
-        withoutEnlargement: true,
+    // First, resize to a square with padding or cropping
+    const squareImage = await sharp(buffer)
+      .resize(AVATAR_REQUIREMENTS.maxWidth, AVATAR_REQUIREMENTS.maxWidth, {
+        fit: "cover", // This will crop to maintain aspect ratio
+        position: "center", // Center the crop
       })
+      .toBuffer();
+
+    // Then process the square image with compression
+    const processed = await sharp(squareImage)
       .webp({
         quality: 85,
-        effort: 6, // Higher compression effort for better size optimization
+        effort: 6,
       })
       .toBuffer();
 
     // If size still exceeds max, try with lower quality
     if (processed.length > AVATAR_REQUIREMENTS.maxSize) {
-      const reducedQuality = await sharp(buffer)
-        .resize(AVATAR_REQUIREMENTS.maxWidth, AVATAR_REQUIREMENTS.maxHeight, {
-          fit: "inside",
-          withoutEnlargement: true,
-        })
+      const reducedQuality = await sharp(squareImage)
         .webp({
           quality: 70,
           effort: 6,
@@ -379,7 +380,7 @@ async function processAvatar(buffer: Buffer): Promise<ProcessedAvatar> {
       return {
         buffer: reducedQuality,
         width: metadata.width || AVATAR_REQUIREMENTS.maxWidth,
-        height: metadata.height || AVATAR_REQUIREMENTS.maxHeight,
+        height: metadata.width || AVATAR_REQUIREMENTS.maxWidth, // Use width for height to ensure square
         format: AVATAR_REQUIREMENTS.format,
         fileSize: reducedQuality.length,
       };
@@ -390,7 +391,7 @@ async function processAvatar(buffer: Buffer): Promise<ProcessedAvatar> {
     return {
       buffer: processed,
       width: metadata.width || AVATAR_REQUIREMENTS.maxWidth,
-      height: metadata.height || AVATAR_REQUIREMENTS.maxHeight,
+      height: metadata.width || AVATAR_REQUIREMENTS.maxWidth, // Use width for height to ensure square
       format: AVATAR_REQUIREMENTS.format,
       fileSize: processed.length,
     };

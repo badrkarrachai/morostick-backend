@@ -12,10 +12,10 @@ export const STICKER_REQUIREMENTS = {
   maxFileSize: 5 * 1024 * 1024, // 5MB for static files
   animatedMaxFileSize: 10 * 1024 * 1024, // 10MB for animated files
   dimensions: {
-    maxWidth: 2048,
-    maxHeight: 2048,
-    minWidth: 100,
-    minHeight: 100,
+    maxWidth: 10000,
+    maxHeight: 10000,
+    minWidth: 50,
+    minHeight: 50,
   },
   maxCategories: 50,
   maxTags: 100,

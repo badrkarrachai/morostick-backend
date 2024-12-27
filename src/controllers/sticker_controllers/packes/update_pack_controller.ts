@@ -114,7 +114,7 @@ export const updatePack = async (req: Request, res: Response) => {
     }
 
     // Check ownership
-    if (!pack.creator.some((creator) => creator._id.toString() === userId)) {
+    if (pack.creator._id.toString() !== userId) {
       return sendErrorResponse({
         res,
         message: "Unauthorized",

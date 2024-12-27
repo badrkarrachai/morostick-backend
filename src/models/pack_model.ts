@@ -34,14 +34,13 @@ const PackSchema = new Schema<IBasePack, IPackModel>(
       type: String,
       trim: true,
     },
-    creator: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: "User",
-        required: true,
-        index: true,
-      },
-    ],
+    creator: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+
     stickers: [
       {
         type: Schema.Types.ObjectId,
@@ -82,6 +81,32 @@ const PackSchema = new Schema<IBasePack, IPackModel>(
     toObject: { virtuals: true },
   }
 );
+
+PackSchema.index({ isPrivate: 1, isAuthorized: 1 }); // For trending and public packs
+PackSchema.index({ categories: 1, isPrivate: 1, isAuthorized: 1 }); // For category-based queries
+PackSchema.index({ creator: 1, isPrivate: 1 }); // For user's packs
+PackSchema.index({ "stats.downloads": -1, isPrivate: 1, isAuthorized: 1 }); // For trending by downloads
+PackSchema.index({ "stats.views": -1, isPrivate: 1, isAuthorized: 1 }); // For trending by views
+PackSchema.index({ "stats.favorites": -1, isPrivate: 1, isAuthorized: 1 }); // For trending by favorites
+PackSchema.index({ createdAt: -1, isPrivate: 1, isAuthorized: 1 }); // For recent packs
+
+// Text index for search
+PackSchema.index(
+  { name: "text", description: "text" },
+  {
+    weights: {
+      name: 10,
+      description: 5,
+    },
+    default_language: "english",
+  }
+);
+
+// Background index for sticker count (if needed)
+PackSchema.index({ stickers: 1 }, { sparse: true });
+
+// Ensure proper index for virtual population of previewStickers
+PackSchema.index({ stickers: 1, position: 1 });
 
 // Array validations
 PackSchema.path("stickers").validate(function (

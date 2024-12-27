@@ -192,10 +192,7 @@ export const moveSticker = async (req: Request, res: Response) => {
     }
 
     // Find pack with stickers
-    const pack = await StickerPack.findById(packId).populate({
-      path: "stickers",
-      select: "_id position",
-    });
+    const pack = await StickerPack.findById(packId);
 
     if (!pack) {
       return sendErrorResponse({
@@ -207,11 +204,8 @@ export const moveSticker = async (req: Request, res: Response) => {
       });
     }
 
-    // Validate user is pack creator
-    const isPackCreator = await StickerPack.exists({
-      _id: packId,
-      creator: userId,
-    });
+    // Validate user is pack creator using pack
+    const isPackCreator = pack.creator.toString() === userId;
 
     if (!isPackCreator) {
       return sendErrorResponse({
@@ -276,10 +270,7 @@ export const moveSticker = async (req: Request, res: Response) => {
     sticker.position = newPosition;
     await sticker.save();
 
-    // Return updated pack
-    const updatedPack = await StickerPack.findById(packId);
-
-    const packView = await transformPack(updatedPack);
+    const packView = await transformPack(pack);
 
     return sendSuccessResponse({
       res,

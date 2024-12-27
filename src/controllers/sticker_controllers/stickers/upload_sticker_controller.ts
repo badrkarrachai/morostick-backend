@@ -139,7 +139,7 @@ export const uploadSticker = async (req: Request, res: Response) => {
     const isCreator =
       pack.creator instanceof Array
         ? pack.creator.some((creator) => creator._id.toString() === userId)
-        : pack.creator === userId;
+        : pack.creator.toString() === userId;
 
     if (!isCreator) {
       return sendErrorResponse({

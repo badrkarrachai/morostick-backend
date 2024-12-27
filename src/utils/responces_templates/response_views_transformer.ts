@@ -1,9 +1,5 @@
 import mongoose, { Types, Document } from "mongoose";
 import { ICategory } from "../../interfaces/category_interface";
-import { IBasePack } from "../../interfaces/pack_interface";
-import { ISticker } from "../../interfaces/sticker_interface";
-import { IUser } from "../../interfaces/user_interface";
-import { IImages } from "../../interfaces/image_interface";
 import {
   StickerView,
   PackView,
@@ -11,54 +7,66 @@ import {
   CreatorView,
 } from "../../interfaces/views_interface";
 import { StickerPack } from "../../models/pack_model";
-import { Category } from "../../models/category_model";
 import { Sticker } from "../../models/sticker_model";
 import { PACK_REQUIREMENTS } from "../../config/app_requirement";
 
-type Lean<T> = mongoose.FlattenMaps<T>;
+// Use WeakMap for better memory management
+const transformCache = {
+  categories: new WeakMap<mongoose.Document, CategoryView>(),
+  creators: new WeakMap<mongoose.Document, CreatorView>(),
+};
 
-// Populated document interfaces
-interface PopulatedUserAvatar extends Omit<IUser, "avatar"> {
-  _id: Types.ObjectId;
-  avatar?: Lean<IImages>;
+// Batch processing helper
+async function batchProcess<T, R>(
+  items: T[],
+  batchSize: number,
+  processor: (batch: T[]) => Promise<R[]>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await processor(batch);
+    results.push(...batchResults);
+  }
+  return results;
 }
 
-interface PopulatedPack extends Omit<IBasePack, "categories" | "creator"> {
-  _id: Types.ObjectId;
-  categories: Lean<ICategory>[];
-  creator: Lean<PopulatedUserAvatar>[];
-}
+// Optimized creator transform with caching
+function transformCreator(user: any): CreatorView {
+  if (transformCache.creators.has(user)) {
+    return transformCache.creators.get(user)!;
+  }
 
-interface PopulatedSticker extends Omit<ISticker, "creator" | "categories"> {
-  _id: Types.ObjectId;
-  creator: Lean<PopulatedUserAvatar>;
-  categories: Lean<ICategory>[];
-}
-
-/**
- * Transform a user document into a CreatorView
- */
-function transformCreator(user: Lean<PopulatedUserAvatar>): CreatorView {
-  return {
+  const result = {
     id: user._id.toString(),
     name: user.name,
     avatarUrl: user.avatar?.url || "",
   };
+
+  if (user instanceof mongoose.Document) {
+    transformCache.creators.set(user, result);
+  }
+
+  return result;
 }
 
-/**
- * Transform a category document into a CategoryView
- */
-export function transformCategory(category: Lean<ICategory>): CategoryView {
-  return {
+// Transform a single category
+export function transformCategory(category: any): CategoryView {
+  if (transformCache.categories.has(category)) {
+    return transformCache.categories.get(category)!;
+  }
+
+  const result = {
     id: category._id.toString(),
     name: category.name,
     slug: category.slug,
     description: category.description,
     emoji: category.emoji,
+    trayIcon: category.trayIcon,
     isActive: category.isActive,
     order: category.order,
     isGenerated: category.isGenerated,
+    tabindex: category.tabindex,
     stats: {
       packCount: category.stats.packCount,
       stickerCount: category.stats.stickerCount,
@@ -68,20 +76,71 @@ export function transformCategory(category: Lean<ICategory>): CategoryView {
     createdAt: category.createdAt,
     updatedAt: category.updatedAt,
   };
+
+  if (category instanceof mongoose.Document) {
+    transformCache.categories.set(category, result);
+  }
+
+  return result;
 }
 
-/**
- * Transform a pack document into a PackView
- */
+// New function to transform multiple categories
+export function transformCategories(
+  categories: (Document | ICategory)[]
+): CategoryView[] {
+  return categories.map(transformCategory);
+}
+
+// Optimized sticker transform
+function transformStickerDirect(
+  sticker: any,
+  includeCreator = true,
+  includeCategories = true
+): StickerView {
+  return {
+    id: sticker._id.toString(),
+    packId: sticker.packId.toString(),
+    name: sticker.name,
+    emojis: sticker.emojis,
+    thumbnailUrl: sticker.thumbnailUrl,
+    webpUrl: sticker.webpUrl,
+    isAnimated: sticker.isAnimated,
+    fileSize: sticker.fileSize,
+    creator: includeCreator ? transformCreator(sticker.creator) : null,
+    dimensions: sticker.dimensions,
+    format: sticker.format,
+    categories: includeCategories
+      ? sticker.categories.map(transformCategory)
+      : null,
+    position: sticker.position,
+    stats: sticker.stats,
+    createdAt: sticker.createdAt,
+    updatedAt: sticker.updatedAt,
+  };
+}
+
+// Optimized pack transform with selective population
 export async function transformPack(
   input: string | Types.ObjectId | Document,
-  stickersLimit?: number
+  options: {
+    stickersLimit?: number;
+    includeStickers?: boolean;
+    includeTotalCount?: boolean;
+    lean?: boolean;
+  } = {}
 ): Promise<PackView | null> {
+  const {
+    stickersLimit = PACK_REQUIREMENTS.maxPreviewStickers,
+    includeStickers = true,
+    includeTotalCount = true,
+    lean = true,
+  } = options;
+
   try {
-    const populatedPack = await StickerPack.findById(
+    const query = StickerPack.findById(
       input instanceof Document ? input._id : input
     )
-      .populate<{ categories: ICategory[] }>("categories")
+      .populate("categories")
       .populate({
         path: "creator",
         select: "name avatar",
@@ -90,11 +149,14 @@ export async function transformPack(
           model: "Image",
           select: "url",
         },
-      })
-      .populate({
+      });
+
+    if (includeStickers) {
+      query.populate({
         path: "stickers",
         options: {
-          limit: stickersLimit ?? PACK_REQUIREMENTS.maxPreviewStickers,
+          limit: stickersLimit,
+          sort: { position: 1 },
         },
         populate: [
           {
@@ -106,29 +168,45 @@ export async function transformPack(
               select: "url",
             },
           },
-          {
-            path: "categories",
-          },
+          { path: "categories" },
         ],
-      })
-      .lean<PopulatedPack>();
+      });
+    }
 
-    if (!populatedPack) return null;
+    if (lean) {
+      query.lean();
+    }
+
+    const [pack, totalStickers] = await Promise.all([
+      query,
+      includeTotalCount
+        ? Sticker.countDocuments({
+            packId: input instanceof Document ? input._id : input,
+          }) // Add caching if your MongoDB driver supports it
+        : Promise.resolve(0),
+    ]);
+
+    if (!pack) return null;
 
     return {
-      id: populatedPack._id.toString(),
-      name: populatedPack.name,
-      description: populatedPack.description,
-      trayIcon: populatedPack.trayIcon,
-      creator: populatedPack.creator.map(transformCreator)[0],
-      stickers: await transformStickers(populatedPack.stickers),
-      isPrivate: populatedPack.isPrivate,
-      isAuthorized: populatedPack.isAuthorized,
-      isAnimatedPack: populatedPack.isAnimatedPack,
-      categories: populatedPack.categories.map(transformCategory),
-      stats: populatedPack.stats,
-      createdAt: populatedPack.createdAt,
-      updatedAt: populatedPack.updatedAt,
+      id: pack._id.toString(),
+      name: pack.name,
+      description: pack.description,
+      trayIcon: pack.trayIcon,
+      creator: transformCreator(pack.creator),
+      stickers: includeStickers
+        ? pack.stickers.map((sticker) =>
+            transformStickerDirect(sticker, false, false)
+          )
+        : [],
+      isPrivate: pack.isPrivate,
+      isAuthorized: pack.isAuthorized,
+      isAnimatedPack: pack.isAnimatedPack,
+      categories: pack.categories.map(transformCategory),
+      totalStickers,
+      stats: pack.stats,
+      createdAt: pack.createdAt,
+      updatedAt: pack.updatedAt,
     };
   } catch (error) {
     console.error("Error transforming pack:", error);
@@ -136,17 +214,32 @@ export async function transformPack(
   }
 }
 
-/**
- * Transform a sticker document into a StickerView
- */
+// Optimized batch processing for multiple packs
+export async function transformPacks(
+  packs: (string | Types.ObjectId | Document)[],
+  options?: Parameters<typeof transformPack>[1]
+): Promise<PackView[]> {
+  const BATCH_SIZE = 10;
+  return batchProcess(packs, BATCH_SIZE, async (batch) => {
+    const transformedBatch = await Promise.all(
+      batch.map((pack) => transformPack(pack, options))
+    );
+    return transformedBatch.filter((pack): pack is PackView => pack !== null);
+  });
+}
+
+// Optimized sticker transform with caching
 export async function transformSticker(
-  input: string | Types.ObjectId | Document
+  input: string | Types.ObjectId | Document,
+  options: { lean?: boolean } = {}
 ): Promise<StickerView | null> {
+  const { lean = true } = options;
+
   try {
-    const populatedSticker = await Sticker.findById(
+    const query = Sticker.findById(
       input instanceof Document ? input._id : input
     )
-      .populate<{ categories: ICategory[] }>("categories")
+      .populate("categories")
       .populate({
         path: "creator",
         select: "name avatar",
@@ -155,58 +248,40 @@ export async function transformSticker(
           model: "Image",
           select: "url",
         },
-      })
-      .lean<PopulatedSticker>();
+      });
 
-    if (!populatedSticker) return null;
+    if (lean) {
+      query.lean();
+    }
 
-    return {
-      id: populatedSticker._id.toString(),
-      packId: populatedSticker.packId.toString(),
-      name: populatedSticker.name,
-      emojis: populatedSticker.emojis,
-      thumbnailUrl: populatedSticker.thumbnailUrl,
-      webpUrl: populatedSticker.webpUrl,
-      isAnimated: populatedSticker.isAnimated,
-      fileSize: populatedSticker.fileSize,
-      creator: transformCreator(populatedSticker.creator),
-      dimensions: populatedSticker.dimensions,
-      format: populatedSticker.format,
-      categories: populatedSticker.categories.map(transformCategory),
-      position: populatedSticker.position,
-      stats: populatedSticker.stats,
-      createdAt: populatedSticker.createdAt,
-      updatedAt: populatedSticker.updatedAt,
-    };
+    const sticker = await query;
+    if (!sticker) return null;
+
+    return transformStickerDirect(sticker);
   } catch (error) {
     console.error("Error transforming sticker:", error);
     return null;
   }
 }
 
-/**
- * Transform arrays of documents
- */
-export async function transformPacks(
-  packs: (string | Types.ObjectId | Document)[]
-): Promise<PackView[]> {
-  const transformedPacks = await Promise.all(
-    packs.map((pack) => transformPack(pack))
-  );
-  return transformedPacks.filter((pack): pack is PackView => pack !== null);
-}
-
+// Optimized batch processing for multiple stickers
 export async function transformStickers(
-  stickers: (string | Types.ObjectId | Document)[]
+  stickers: (string | Types.ObjectId | Document)[],
+  options?: Parameters<typeof transformSticker>[1]
 ): Promise<StickerView[]> {
-  const transformedStickers = await Promise.all(
-    stickers.map((sticker) => transformSticker(sticker))
-  );
-  return transformedStickers.filter(
-    (sticker): sticker is StickerView => sticker !== null
-  );
+  const BATCH_SIZE = 20;
+  return batchProcess(stickers, BATCH_SIZE, async (batch) => {
+    const transformedBatch = await Promise.all(
+      batch.map((sticker) => transformSticker(sticker, options))
+    );
+    return transformedBatch.filter(
+      (sticker): sticker is StickerView => sticker !== null
+    );
+  });
 }
 
-export function transformCategories(categories: ICategory[]): CategoryView[] {
-  return categories.map(transformCategory);
-}
+// Clear transform caches periodically
+setInterval(() => {
+  transformCache.categories = new WeakMap();
+  transformCache.creators = new WeakMap();
+}, 5 * 60 * 1000); // Clear every 5 minutes

@@ -5,9 +5,11 @@ export interface ICategory extends Document {
   slug: string;
   description?: string;
   emoji?: string[];
+  trayIcon?: string;
   isActive: boolean;
   order: number;
   isGenerated: boolean;
+  tabindex?: number;
   stats: {
     packCount: number;
     stickerCount: number;

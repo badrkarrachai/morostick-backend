@@ -1,6 +1,14 @@
 import mongoose, { Schema, Model, Types } from "mongoose";
 import { ICategory } from "../interfaces/category_interface";
 
+// utility function for name formatting
+const formatCategoryName = (name: string): string => {
+  // Convert the name to lowercase first
+  const lowercased = name.toLowerCase().trim();
+  // Capitalize the first letter
+  return lowercased.charAt(0).toUpperCase() + lowercased.slice(1);
+};
+
 // Define interface for static methods
 interface ICategoryModel extends Model<ICategory> {
   findOrCreate(name: string, isGenerated?: boolean): Promise<ICategory>;
@@ -48,6 +56,7 @@ const CategorySchema = new Schema<ICategory, ICategoryModel>(
       unique: true,
       trim: true,
       maxlength: 50,
+      set: formatCategoryName,
     },
     slug: {
       type: String,
@@ -74,6 +83,10 @@ const CategorySchema = new Schema<ICategory, ICategoryModel>(
         },
         message: "Invalid emoji format",
       },
+    },
+    trayIcon: {
+      type: String,
+      trim: true,
     },
     isActive: {
       type: Boolean,
@@ -173,7 +186,6 @@ CategorySchema.static(
         resultCategories = [fallbackCategory.id];
       }
 
-      // Validate final result
       if (resultCategories.length === 0) {
         throw new Error("No valid categories could be assigned");
       }
@@ -213,7 +225,8 @@ CategorySchema.pre("save", function (next) {
 CategorySchema.static(
   "findOrCreate",
   async function (name: string, isGenerated = false): Promise<ICategory> {
-    const slug = name
+    const formattedName = formatCategoryName(name);
+    const slug = formattedName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/(^-|-$)/g, "");
@@ -228,7 +241,7 @@ CategorySchema.static(
       const order = (lastCategory?.order ?? -1) + 1;
 
       category = await this.create({
-        name,
+        name: formattedName, // Use formatted name
         slug,
         order,
         isGenerated,

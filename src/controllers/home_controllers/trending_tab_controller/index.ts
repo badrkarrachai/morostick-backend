@@ -1,21 +1,13 @@
 import { Request, Response } from "express";
-import { Types, PipelineStage } from "mongoose";
-import { StickerPack } from "../../../models/pack_model";
-import User from "../../../models/users_model";
 import {
   sendSuccessResponse,
   sendErrorResponse,
 } from "../../../utils/response_handler_util";
 import { validateRequest } from "../../../utils/validations_util";
 import { query } from "express-validator";
-import { PACK_REQUIREMENTS } from "../../../config/app_requirement";
-import { Category } from "../../../models/category_model";
-import { ICategory } from "../../../interfaces/category_interface";
 import { CategoryView, PackView } from "../../../interfaces/views_interface";
-import {
-  transformCategories,
-  transformPacks,
-} from "../../../utils/responces_templates/response_views_transformer";
+import { getCategoriesByNames } from "./get_top_categories";
+import { getTrendingPacks } from "./get_trending_packs";
 
 export const getTrendingValidationRules = [
   query("page")
@@ -44,103 +36,7 @@ interface TrendingResponse {
   };
 }
 
-const getTopCategories = async (): Promise<CategoryView[]> => {
-  const categories = await Category.find({ isActive: true })
-    .sort({ order: 1, "stats.totalDownloads": -1 })
-    .limit(10);
-  const transformedCategories = await transformCategories(categories);
-  return transformedCategories;
-};
-
-const getTrendingPacks = async (
-  page: number,
-  limit: number,
-  categoryId?: string,
-  userId?: string
-): Promise<{ packs: PackView[]; total: number }> => {
-  const skip = (page - 1) * limit;
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  // Get user favorites if logged in
-  const userFavorites = userId
-    ? await User.findById(userId)
-        .select("favoritesPacks")
-        .then((u) => u?.favoritesPacks || [])
-    : [];
-
-  const pipeline: PipelineStage[] = [
-    {
-      $match: {
-        isPrivate: false,
-        isAuthorized: true,
-        createdAt: { $gte: thirtyDaysAgo },
-        ...(categoryId && {
-          categories: new Types.ObjectId(categoryId),
-        }),
-        ...(userId && {
-          _id: { $nin: userFavorites },
-        }),
-      },
-    },
-    {
-      $addFields: {
-        trendingScore: {
-          $add: [
-            { $multiply: [{ $ifNull: ["$stats.downloads", 0] }, 10] },
-            { $multiply: [{ $ifNull: ["$stats.views", 0] }, 5] },
-            { $multiply: [{ $ifNull: ["$stats.favorites", 0] }, 8] },
-            {
-              $multiply: [
-                {
-                  $divide: [
-                    1,
-                    {
-                      $add: [
-                        {
-                          $divide: [
-                            { $subtract: [new Date(), "$createdAt"] },
-                            86400000,
-                          ],
-                        },
-                        1,
-                      ],
-                    },
-                  ],
-                },
-                100,
-              ],
-            },
-          ],
-        },
-      },
-    },
-    { $sort: { trendingScore: -1 } },
-    { $skip: skip },
-    { $limit: limit },
-  ];
-
-  const [packs, totalCount] = await Promise.all([
-    StickerPack.aggregate(pipeline),
-    StickerPack.countDocuments({
-      isPrivate: false,
-      isAuthorized: true,
-      createdAt: { $gte: thirtyDaysAgo },
-      ...(categoryId && {
-        categories: new Types.ObjectId(categoryId),
-      }),
-      ...(userId && {
-        _id: { $nin: userFavorites },
-      }),
-    }),
-  ]);
-
-  const transformedPacks = await transformPacks(packs);
-  return {
-    packs: transformedPacks,
-    total: totalCount,
-  };
-};
+const categories = ["Meme", "Cat", "Love", "Dog"];
 
 export const getTrending = async (req: Request, res: Response) => {
   try {
@@ -169,7 +65,7 @@ export const getTrending = async (req: Request, res: Response) => {
     const userId = req.user?.id;
 
     const [topCategories, trendingPacks] = await Promise.all([
-      getTopCategories(),
+      getCategoriesByNames(categories),
       getTrendingPacks(page, limit, categoryId, userId),
     ]);
 

@@ -100,9 +100,10 @@ async function getUserInterests(userId: string): Promise<UserInterests> {
 
       // Process creator network for packs only
       if (type === "pack") {
-        (item as IBasePack).creator?.forEach((creator) =>
-          creatorSet.add(creator.toString())
-        );
+        const creator = (item as IBasePack).creator;
+        if (creator) {
+          creatorSet.add(creator.toString());
+        }
 
         // Process name tokens for packs only
         (item as IBasePack).name
@@ -168,13 +169,30 @@ const getMatchStage = async (userId?: string): Promise<Record<string, any>> => {
 export const getSuggestedPacks = async (
   page: number,
   limit: number,
-  userId?: string
+  userId?: string,
+  shownPackIds: string[] = [] // Add parameter to track shown packs
 ): Promise<{ packs: PackView[]; total: number }> => {
   const skip = (page - 1) * limit;
-  const [userInterests, matchStage] = await Promise.all([
+
+  // Convert shown pack IDs to ObjectIds
+  const shownPackObjectIds = shownPackIds.map((id) => new Types.ObjectId(id));
+
+  // Get match stage and user interests in parallel
+  const [userInterests, baseMatchStage] = await Promise.all([
     userId ? getUserInterests(userId) : null,
     getMatchStage(userId),
   ]);
+
+  // Add shown packs to exclusion list in match stage
+  const matchStage = {
+    ...baseMatchStage,
+    _id: {
+      $nin: [...(baseMatchStage._id?.$nin || []), ...shownPackObjectIds],
+    },
+  };
+
+  // Fetch more items for randomization
+  const fetchLimit = limit * 3;
 
   const pipeline: PipelineStage[] = [
     { $match: matchStage },
@@ -187,17 +205,14 @@ export const getSuggestedPacks = async (
         stickers: 1,
         stats: 1,
         createdAt: 1,
-        // Only include necessary fields
       },
     },
     {
       $addFields: {
         suggestionScore: {
           $add: [
-            // Simplified scoring system
             ...(userInterests
               ? [
-                  // Category matching (highest priority)
                   {
                     $multiply: [
                       {
@@ -211,7 +226,6 @@ export const getSuggestedPacks = async (
                       200,
                     ],
                   },
-                  // Animation preference
                   {
                     $cond: {
                       if: {
@@ -224,7 +238,6 @@ export const getSuggestedPacks = async (
                       else: 0,
                     },
                   },
-                  // Creator proximity
                   {
                     $cond: {
                       if: {
@@ -241,7 +254,6 @@ export const getSuggestedPacks = async (
                   },
                 ]
               : []),
-            // Quality and recency
             { $multiply: [{ $size: "$stickers" }, 50] },
             {
               $multiply: [
@@ -254,7 +266,6 @@ export const getSuggestedPacks = async (
                 0.1,
               ],
             },
-            // Popularity (lowest priority)
             {
               $add: [
                 { $multiply: [{ $ifNull: ["$stats.downloads", 0] }, 0.5] },
@@ -268,7 +279,11 @@ export const getSuggestedPacks = async (
     },
     { $sort: { suggestionScore: -1 } },
     { $skip: skip },
-    { $limit: limit },
+    { $limit: fetchLimit },
+    // Add randomization stages
+    { $addFields: { randomValue: { $rand: {} } } },
+    { $sort: { randomValue: 1 } },
+    { $project: { randomValue: 0 } }, // Remove the random field
   ];
 
   const [packs, totalCount] = await Promise.all([
@@ -276,8 +291,12 @@ export const getSuggestedPacks = async (
     StickerPack.countDocuments(matchStage),
   ]);
 
+  // Take only the required number of items
+  const finalPacks = packs.slice(0, limit);
+  const transformedPacks = await transformPacks(finalPacks);
+
   return {
-    packs: await transformPacks(packs),
+    packs: transformedPacks,
     total: totalCount,
   };
 };

@@ -1,24 +1,14 @@
 import { Request, Response } from "express";
-import { Types, PipelineStage } from "mongoose";
-import { StickerPack } from "../../../models/pack_model";
 import User from "../../../models/users_model";
 import { validateRequest } from "../../../utils/validations_util";
 import { query } from "express-validator";
-import { PACK_REQUIREMENTS } from "../../../config/app_requirement";
 import {
   sendSuccessResponse,
   sendErrorResponse,
 } from "../../../utils/response_handler_util";
-import {
-  IBasePack,
-  packKeysToRemove,
-} from "../../../interfaces/pack_interface";
-import { processObject } from "../../../utils/process_object";
-import { transformPacks } from "../../../utils/responces_templates/response_views_transformer";
 import { PackView } from "../../../interfaces/views_interface";
 import { getRecommendedPacks } from "./get_recommended_packs";
 import { getTrendingPacks } from "./get_trending_packs";
-import { getPopularPacks } from "./get_gopular_packs";
 import { getSuggestedPacks } from "./get_suggested_packs";
 
 interface UserPreferences {
@@ -32,7 +22,6 @@ interface UserPreferences {
 interface ForYouResponse {
   recommended: PackView[];
   trending: PackView[];
-  popular: PackView[];
   suggested: {
     packs: PackView[];
     pagination: {
@@ -141,10 +130,9 @@ export const getForYou = async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const userId = req.user?.id;
 
-    const [recommended, trending, popular, suggested] = await Promise.all([
+    const [recommended, trending, suggested] = await Promise.all([
       getRecommendedPacks(userId),
       getTrendingPacks(userId),
-      getPopularPacks(userId),
       getSuggestedPacks(page, limit, userId),
     ]);
 
@@ -153,7 +141,6 @@ export const getForYou = async (req: Request, res: Response) => {
     const response: ForYouResponse = {
       recommended,
       trending,
-      popular,
       suggested: {
         packs: suggested.packs,
         pagination: {
