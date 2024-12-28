@@ -9,8 +9,6 @@ import { validateRequest } from "../../../utils/validations_util";
 import { body } from "express-validator";
 import { PACK_REQUIREMENTS } from "../../../config/app_requirement";
 import { Types } from "mongoose";
-import { processObject } from "../../../utils/process_object";
-import { packKeysToRemove } from "../../../interfaces/pack_interface";
 import { transformPack } from "../../../utils/responces_templates/response_views_transformer";
 
 export const createPackValidationRules = [
