@@ -10,6 +10,7 @@ import { PackView } from "../../../interfaces/views_interface";
 import { getRecommendedPacks } from "./get_recommended_packs";
 import { getTrendingPacks } from "./get_trending_packs";
 import { getSuggestedPacks } from "./get_suggested_packs";
+import { StickerPack } from "../../../models/pack_model";
 
 interface UserPreferences {
   favoriteCreators: string[];
@@ -135,6 +136,22 @@ export const getForYou = async (req: Request, res: Response) => {
       getTrendingPacks(userId),
       getSuggestedPacks(page, limit, userId),
     ]);
+
+    // Record views for all fetched packs
+    const allPackIds = [
+      ...recommended.map((pack) => pack.id),
+      ...trending.map((pack) => pack.id),
+      ...suggested.packs.map((pack) => pack.id),
+    ];
+
+    // Record views in background without awaiting
+    if (allPackIds.length > 0) {
+      StickerPack.recordBatchViews(allPackIds, {
+        userId: req.user?.id,
+      }).catch((error) => {
+        console.error("Failed to record pack views:", error);
+      });
+    }
 
     const totalPages = Math.ceil(suggested.total / limit);
 

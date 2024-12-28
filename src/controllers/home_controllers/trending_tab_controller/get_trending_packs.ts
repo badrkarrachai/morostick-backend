@@ -9,11 +9,10 @@ export const getTrendingPacks = async (
   limit: number,
   categoryId?: string,
   userId?: string,
-  shownPackIds: string[] = [] // Add parameter to track shown packs
+  shownPackIds: string[] = []
 ): Promise<{ packs: PackView[]; total: number }> => {
   const skip = (page - 1) * limit;
 
-  // Get user favorites if logged in
   const userFavorites = userId
     ? await User.findById(userId)
         .select("favoritesPacks -_id")
@@ -21,15 +20,13 @@ export const getTrendingPacks = async (
         .then((u) => u?.favoritesPacks || [])
     : [];
 
-  // Convert shown pack IDs to ObjectIds
   const shownPackObjectIds = shownPackIds.map((id) => new Types.ObjectId(id));
 
-  // Base match conditions
   const matchStage: PipelineStage.Match = {
     $match: {
       isPrivate: false,
       isAuthorized: true,
-      _id: { $nin: [...shownPackObjectIds] }, // Exclude already shown packs
+      _id: { $nin: [...shownPackObjectIds] },
       ...(categoryId && {
         categories: new Types.ObjectId(categoryId),
       }),
@@ -40,19 +37,36 @@ export const getTrendingPacks = async (
     },
   };
 
+  // Enhanced trending score calculation that includes views
   const calculateTrendingScore = {
     $addFields: {
       trendingScore: {
         $add: [
           { $multiply: [{ $ifNull: ["$stats.downloads", 0] }, 10] },
-          { $multiply: [{ $ifNull: ["$stats.views", 0] }, 5] },
+          { $multiply: [{ $ifNull: ["$stats.views", 0] }, 5] }, // Views weight
           { $multiply: [{ $ifNull: ["$stats.favorites", 0] }, 8] },
+          // Add time decay factor
+          {
+            $divide: [
+              1000000,
+              {
+                $add: [
+                  1,
+                  {
+                    $divide: [
+                      { $subtract: [new Date(), "$createdAt"] },
+                      86400000, // milliseconds in a day
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
         ],
       },
     },
   };
 
-  // Fetch more items for randomization on all pages
   const fetchLimit = limit * 3;
   const pipeline: PipelineStage[] = [
     matchStage,
@@ -60,13 +74,11 @@ export const getTrendingPacks = async (
     { $sort: { trendingScore: -1 } },
     { $skip: skip },
     { $limit: fetchLimit },
-    // Add a random sort stage
     { $addFields: { randomValue: { $rand: {} } } },
     { $sort: { randomValue: 1 } },
-    { $project: { randomValue: 0 } }, // Remove the random field
+    { $project: { randomValue: 0 } },
   ];
 
-  // Execute query and count in parallel
   const [packs, totalCount] = await Promise.all([
     StickerPack.aggregate(pipeline)
       .allowDiskUse(true)
@@ -74,7 +86,6 @@ export const getTrendingPacks = async (
     StickerPack.countDocuments(matchStage.$match),
   ]);
 
-  // Take only the required number of items
   const finalPacks = packs.slice(0, limit);
   const transformedPacks = await transformPacks(finalPacks);
 

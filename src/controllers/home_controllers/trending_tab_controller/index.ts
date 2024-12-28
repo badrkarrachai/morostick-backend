@@ -8,6 +8,7 @@ import { query } from "express-validator";
 import { CategoryView, PackView } from "../../../interfaces/views_interface";
 import { getCategoriesByNames } from "./get_top_categories";
 import { getTrendingPacks } from "./get_trending_packs";
+import { StickerPack } from "../../../models/pack_model";
 
 export const getTrendingValidationRules = [
   query("page")
@@ -36,7 +37,18 @@ interface TrendingResponse {
   };
 }
 
-const categories = ["Meme", "Cat", "Love", "Dog"];
+const categories = [
+  "Meme",
+  "Cat",
+  "Love",
+  "Dog",
+  "Baby",
+  "Reaction",
+  "Cute",
+  "Anime",
+  "Crypto",
+  "Emoji",
+];
 
 export const getTrending = async (req: Request, res: Response) => {
   try {
@@ -68,6 +80,18 @@ export const getTrending = async (req: Request, res: Response) => {
       getCategoriesByNames(categories),
       getTrendingPacks(page, limit, categoryId, userId),
     ]);
+
+    // Record views in background without waiting
+    if (trendingPacks.packs.length > 0) {
+      StickerPack.recordBatchViews(
+        trendingPacks.packs.map((pack) => pack.id),
+        {
+          userId: req.user?.id,
+        }
+      ).catch((error) => {
+        console.error("Failed to record pack views:", error);
+      });
+    }
 
     const totalPages = Math.ceil(trendingPacks.total / limit);
 

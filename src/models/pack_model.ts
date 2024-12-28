@@ -7,6 +7,37 @@ import {
 import { ISticker } from "../interfaces/sticker_interface";
 import { PACK_REQUIREMENTS } from "../config/app_requirement";
 
+// View Log Schema (separate collection)
+const ViewLogSchema = new Schema(
+  {
+    packId: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      index: true,
+    },
+    userId: {
+      type: Schema.Types.ObjectId,
+      sparse: true,
+      index: true,
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now,
+      index: true,
+    },
+  },
+  {
+    timeseries: {
+      timeField: "timestamp",
+      metaField: "packId",
+      granularity: "hours",
+    },
+  }
+);
+
+export const ViewLog = mongoose.model("ViewLog", ViewLogSchema);
+
+// Stats Schema
 const StatsSchema = new Schema(
   {
     downloads: { type: Number, default: 0, min: 0 },
@@ -16,6 +47,7 @@ const StatsSchema = new Schema(
   { _id: false }
 );
 
+// Main Pack Schema
 const PackSchema = new Schema<IBasePack, IPackModel>(
   {
     name: {
@@ -40,7 +72,6 @@ const PackSchema = new Schema<IBasePack, IPackModel>(
       required: true,
       index: true,
     },
-
     stickers: [
       {
         type: Schema.Types.ObjectId,
@@ -82,13 +113,15 @@ const PackSchema = new Schema<IBasePack, IPackModel>(
   }
 );
 
-PackSchema.index({ isPrivate: 1, isAuthorized: 1 }); // For trending and public packs
-PackSchema.index({ categories: 1, isPrivate: 1, isAuthorized: 1 }); // For category-based queries
-PackSchema.index({ creator: 1, isPrivate: 1 }); // For user's packs
-PackSchema.index({ "stats.downloads": -1, isPrivate: 1, isAuthorized: 1 }); // For trending by downloads
-PackSchema.index({ "stats.views": -1, isPrivate: 1, isAuthorized: 1 }); // For trending by views
-PackSchema.index({ "stats.favorites": -1, isPrivate: 1, isAuthorized: 1 }); // For trending by favorites
-PackSchema.index({ createdAt: -1, isPrivate: 1, isAuthorized: 1 }); // For recent packs
+// Indexes
+PackSchema.index({ isPrivate: 1, isAuthorized: 1 });
+PackSchema.index({ categories: 1, isPrivate: 1, isAuthorized: 1 });
+PackSchema.index({ creator: 1, isPrivate: 1 });
+PackSchema.index({ "stats.downloads": -1, isPrivate: 1, isAuthorized: 1 });
+PackSchema.index({ "stats.views": -1, isPrivate: 1, isAuthorized: 1 });
+PackSchema.index({ "stats.favorites": -1, isPrivate: 1, isAuthorized: 1 });
+PackSchema.index({ createdAt: -1, isPrivate: 1, isAuthorized: 1 });
+PackSchema.index({ stickers: 1, position: 1 });
 
 // Text index for search
 PackSchema.index(
@@ -101,12 +134,6 @@ PackSchema.index(
     default_language: "english",
   }
 );
-
-// Background index for sticker count (if needed)
-PackSchema.index({ stickers: 1 }, { sparse: true });
-
-// Ensure proper index for virtual population of previewStickers
-PackSchema.index({ stickers: 1, position: 1 });
 
 // Array validations
 PackSchema.path("stickers").validate(function (
@@ -123,8 +150,15 @@ PackSchema.path("categories").validate(function (
 },
 `Pack cannot have more than ${PACK_REQUIREMENTS.maxCategories} categories`);
 
-// Instance methods
-const methods: IPackMethods = {
+// Extended Methods Interface
+interface UpdatedPackMethods extends IPackMethods {
+  recordView(options: { userId?: string }): Promise<boolean>;
+  incrementStats(field: keyof typeof StatsSchema.obj): Promise<void>;
+}
+
+// Combined methods
+const methods: UpdatedPackMethods = {
+  // Existing sticker methods
   async addSticker(stickerId: mongoose.Types.ObjectId): Promise<void> {
     if (this.stickers.length >= PACK_REQUIREMENTS.maxStickers) {
       throw new Error(
@@ -133,7 +167,6 @@ const methods: IPackMethods = {
     }
 
     const position = this.stickers.length;
-
     await mongoose.model<ISticker>("Sticker").findByIdAndUpdate(stickerId, {
       position: position,
       packId: this._id,
@@ -150,7 +183,6 @@ const methods: IPackMethods = {
     if (!sticker) return;
 
     const removedPosition = sticker.position;
-
     this.stickers = this.stickers.filter((id) => !id.equals(stickerId));
 
     await mongoose.model<ISticker>("Sticker").updateMany(
@@ -212,6 +244,48 @@ const methods: IPackMethods = {
 
     await this.reorderStickers(stickers);
   },
+
+  // View tracking methods
+  async recordView({ userId }: { userId?: string }): Promise<boolean> {
+    if (!userId) {
+      // If no userId, just increment view without tracking
+      await this.incrementStats("views");
+      return true;
+    }
+
+    const now = new Date();
+    const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
+
+    const recentView = await ViewLog.findOne({
+      packId: this._id,
+      userId: new mongoose.Types.ObjectId(userId),
+      timestamp: { $gte: thirtyMinutesAgo },
+    }).lean();
+
+    if (recentView) {
+      return false;
+    }
+
+    await Promise.all([
+      ViewLog.create({
+        packId: this._id,
+        userId: new mongoose.Types.ObjectId(userId),
+        timestamp: now,
+      }),
+      this.model("Pack").updateOne(
+        { _id: this._id },
+        { $inc: { "stats.views": 1 } }
+      ),
+    ]);
+
+    return true;
+  },
+
+  async incrementStats(field: keyof typeof StatsSchema.obj): Promise<void> {
+    const update = { $inc: {} };
+    update.$inc[`stats.${field}`] = 1;
+    await this.model("Pack").updateOne({ _id: this._id }, update);
+  },
 };
 
 // Add methods to schema
@@ -242,6 +316,102 @@ PackSchema.virtual("previewStickers", {
     sort: { position: 1 },
   },
 });
+
+// Static methods for analytics
+PackSchema.statics.getViewStats = async function (
+  packId: string,
+  timeRange: {
+    start: Date;
+    end: Date;
+  }
+): Promise<
+  {
+    date: string;
+    views: number;
+    uniqueUsers: number;
+  }[]
+> {
+  return ViewLog.aggregate([
+    {
+      $match: {
+        packId: new mongoose.Types.ObjectId(packId),
+        timestamp: { $gte: timeRange.start, $lte: timeRange.end },
+      },
+    },
+    {
+      $group: {
+        _id: {
+          $dateToString: { format: "%Y-%m-%d", date: "$timestamp" },
+        },
+        views: { $sum: 1 },
+        uniqueUsers: {
+          $addToSet: "$userId",
+        },
+      },
+    },
+    {
+      $project: {
+        date: "$_id",
+        views: 1,
+        uniqueUsers: { $size: "$uniqueUsers" },
+        _id: 0,
+      },
+    },
+    { $sort: { date: 1 } },
+  ]);
+};
+
+// Add this static method to your pack model
+PackSchema.statics.recordBatchViews = async function (
+  packIds: string[],
+  options: { userId?: string }
+): Promise<void> {
+  if (!packIds.length) return;
+
+  // For anonymous users, just increment views
+  if (!options.userId) {
+    await this.updateMany(
+      { _id: { $in: packIds.map((id) => new mongoose.Types.ObjectId(id)) } },
+      { $inc: { "stats.views": 1 } }
+    );
+    return;
+  }
+
+  const now = new Date();
+  const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
+
+  // Get recently viewed packs for this user
+  const recentViews = await ViewLog.distinct("packId", {
+    packId: { $in: packIds.map((id) => new mongoose.Types.ObjectId(id)) },
+    userId: new mongoose.Types.ObjectId(options.userId),
+    timestamp: { $gte: thirtyMinutesAgo },
+  });
+
+  // Filter out recently viewed packs
+  const packsToUpdate = packIds.filter(
+    (id) => !recentViews.some((recentId) => recentId.equals(id))
+  );
+
+  if (!packsToUpdate.length) return;
+
+  await Promise.all([
+    ViewLog.insertMany(
+      packsToUpdate.map((packId) => ({
+        packId: new mongoose.Types.ObjectId(packId),
+        userId: new mongoose.Types.ObjectId(options.userId),
+        timestamp: now,
+      }))
+    ),
+    this.updateMany(
+      {
+        _id: {
+          $in: packsToUpdate.map((id) => new mongoose.Types.ObjectId(id)),
+        },
+      },
+      { $inc: { "stats.views": 1 } }
+    ),
+  ]);
+};
 
 export const StickerPack = mongoose.model<IBasePack, IPackModel>(
   "Pack",

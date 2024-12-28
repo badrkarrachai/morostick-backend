@@ -23,6 +23,8 @@ export interface IPackMethods {
   removeSticker(stickerId: Types.ObjectId): Promise<void>;
   reorderStickers(stickerIds: Types.ObjectId[]): Promise<void>;
   moveSticker(stickerId: Types.ObjectId, newPosition: number): Promise<void>;
+  recordView(options: { userId?: string }): Promise<boolean>;
+  incrementStats(field: keyof IStats): Promise<void>;
 }
 
 // Combined interface for document with methods
@@ -30,8 +32,19 @@ export interface IBasePack extends IBasicPack, Document, IPackMethods {}
 
 // Model interface
 export interface IPackModel extends Model<IBasePack> {
-  // Add any static methods here if needed
-}
+  recordBatchViews(
+    packIds: string[],
+    options: { userId?: string }
+  ): Promise<void>;
 
-// removeable properties
-export const packKeysToRemove = ["__v"];
+  getViewStats(
+    packId: string,
+    timeRange: { start: Date; end: Date }
+  ): Promise<
+    {
+      date: string;
+      views: number;
+      uniqueUsers: number;
+    }[]
+  >;
+}
