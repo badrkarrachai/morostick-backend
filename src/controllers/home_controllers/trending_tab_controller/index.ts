@@ -37,6 +37,7 @@ interface TrendingResponse {
   };
 }
 
+//!!! Before changing this, make sure it's same as the one in category_tabs_controller
 const categories = [
   "Meme",
   "Cat",
