@@ -11,14 +11,13 @@ const getRandomInRange = (min: number, max: number): number => {
 
 // Helper function to get a random date within a range
 const getRandomDate = (start: Date, end: Date): Date => {
-  return new Date(
-    start.getTime() + Math.random() * (end.getTime() - start.getTime())
-  );
+  return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
 };
 
-export const getTrendingPacks = async (
-  userId?: string
-): Promise<PackView[]> => {
+export const getTrendingPacks = async (userId?: string, hiddenPacks: string[] = []): Promise<PackView[]> => {
+  // Combine all excluded packs
+  const excludedPacks = [...hiddenPacks];
+
   // Randomize the time window between 15 and 45 days
   const randomDays = getRandomInRange(15, 45);
   const dateWindow = new Date();
@@ -36,12 +35,8 @@ export const getTrendingPacks = async (
         isPrivate: false,
         isAuthorized: true,
         createdAt: { $gte: dateWindow },
-        ...(userId && {
-          _id: {
-            $nin: await User.findById(userId)
-              .select("favoritesPacks")
-              .then((u) => u?.favoritesPacks || []),
-          },
+        ...(hiddenPacks.length > 0 && {
+          _id: { $nin: hiddenPacks },
         }),
       },
     },
@@ -72,10 +67,7 @@ export const getTrendingPacks = async (
                 {
                   $add: [
                     {
-                      $divide: [
-                        { $subtract: [new Date(), "$createdAt"] },
-                        86400000,
-                      ],
+                      $divide: [{ $subtract: [new Date(), "$createdAt"] }, 86400000],
                     },
                     1,
                   ],
@@ -94,23 +86,17 @@ export const getTrendingPacks = async (
           $add: [
             "$baseMetrics",
             "$timeDecay",
-            { $multiply: ["$randomBoost", getRandomInRange(20, 40)] }, // Random boost factor
+            { $multiply: ["$randomBoost", getRandomInRange(20, 40)] },
             {
-              // Bonus for packs with balanced metrics
               $cond: {
                 if: {
-                  $and: [
-                    { $gt: ["$stats.downloads", 0] },
-                    { $gt: ["$stats.views", 0] },
-                    { $gt: ["$stats.favorites", 0] },
-                  ],
+                  $and: [{ $gt: ["$stats.downloads", 0] }, { $gt: ["$stats.views", 0] }, { $gt: ["$stats.favorites", 0] }],
                 },
                 then: { $multiply: [{ $rand: {} }, getRandomInRange(10, 20)] },
                 else: 0,
               },
             },
             {
-              // Time-of-day boost (random variation based on current hour)
               $multiply: [
                 { $rand: {} },
                 {
@@ -123,7 +109,6 @@ export const getTrendingPacks = async (
       },
     },
     { $sort: { trendingScore: -1 } },
-    // Randomize the number of results
     { $limit: getRandomInRange(8, 12) },
   ];
 
@@ -138,12 +123,8 @@ export const getTrendingPacks = async (
             isPrivate: false,
             isAuthorized: true,
             createdAt: { $gte: dateWindow },
-            ...(userId && {
-              _id: {
-                $nin: await User.findById(userId)
-                  .select("favoritesPacks")
-                  .then((u) => u?.favoritesPacks || []),
-              },
+            ...(hiddenPacks.length > 0 && {
+              _id: { $nin: hiddenPacks },
             }),
           },
         },
@@ -160,10 +141,7 @@ export const getTrendingPacks = async (
       }))
       .sort((a, b) => {
         const scoreDiff = b.trendingScore - a.trendingScore;
-        // If scores are close (within 5%), use random shuffle score
-        return Math.abs(scoreDiff) < b.trendingScore * 0.05
-          ? b.shuffleScore - a.shuffleScore
-          : scoreDiff;
+        return Math.abs(scoreDiff) < b.trendingScore * 0.05 ? b.shuffleScore - a.shuffleScore : scoreDiff;
       });
 
     return transformPacks(shuffledPacks);
@@ -174,6 +152,9 @@ export const getTrendingPacks = async (
         $match: {
           isPrivate: false,
           isAuthorized: true,
+          ...(hiddenPacks.length > 0 && {
+            _id: { $nin: hiddenPacks },
+          }),
         },
       },
       { $sample: { size: getRandomInRange(8, 12) } },

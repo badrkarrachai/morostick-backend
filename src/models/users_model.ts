@@ -60,6 +60,7 @@ const userSchema = new Schema<IUser>(
     packs: [{ type: Types.ObjectId, ref: "Pack" }],
     favoritesPacks: [{ type: Types.ObjectId, ref: "Pack" }],
     favoritesStickers: [{ type: Types.ObjectId, ref: "Sticker" }],
+    hiddenPacks: [{ type: Types.ObjectId, ref: "Pack" }],
   },
   {
     timestamps: true,

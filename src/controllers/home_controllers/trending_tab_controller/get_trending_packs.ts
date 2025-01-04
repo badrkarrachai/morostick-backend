@@ -13,27 +13,27 @@ export const getTrendingPacks = async (
 ): Promise<{ packs: PackView[]; total: number }> => {
   const skip = (page - 1) * limit;
 
-  const userFavorites = userId
+  // Get user's favorites and hidden packs in a single query if userId provided
+  const userPacks = userId
     ? await User.findById(userId)
-        .select("favoritesPacks -_id")
+        .select("favoritesPacks hiddenPacks -_id")
         .lean()
-        .then((u) => u?.favoritesPacks || [])
-    : [];
+        .then((u) => ({
+          hiddenPacks: u?.hiddenPacks || [],
+        }))
+    : { favoritesPacks: [], hiddenPacks: [] };
 
-  const shownPackObjectIds = shownPackIds.map((id) => new Types.ObjectId(id));
+  // Combine all excluded pack IDs
+  const excludedPackIds = [...userPacks.hiddenPacks];
 
   const matchStage: PipelineStage.Match = {
     $match: {
       isPrivate: false,
       isAuthorized: true,
-      _id: { $nin: [...shownPackObjectIds] },
+      _id: { $nin: excludedPackIds },
       ...(categoryId && {
         categories: new Types.ObjectId(categoryId),
       }),
-      ...(userId &&
-        userFavorites.length > 0 && {
-          _id: { $nin: [...userFavorites, ...shownPackObjectIds] },
-        }),
     },
   };
 
@@ -43,7 +43,7 @@ export const getTrendingPacks = async (
       trendingScore: {
         $add: [
           { $multiply: [{ $ifNull: ["$stats.downloads", 0] }, 10] },
-          { $multiply: [{ $ifNull: ["$stats.views", 0] }, 5] }, // Views weight
+          { $multiply: [{ $ifNull: ["$stats.views", 0] }, 5] },
           { $multiply: [{ $ifNull: ["$stats.favorites", 0] }, 8] },
           // Add time decay factor
           {
@@ -80,9 +80,7 @@ export const getTrendingPacks = async (
   ];
 
   const [packs, totalCount] = await Promise.all([
-    StickerPack.aggregate(pipeline)
-      .allowDiskUse(true)
-      .option({ maxTimeMS: 5000 }),
+    StickerPack.aggregate(pipeline).allowDiskUse(true).option({ maxTimeMS: 5000 }),
     StickerPack.countDocuments(matchStage.$match),
   ]);
 

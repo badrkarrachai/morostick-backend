@@ -1,14 +1,14 @@
 import { Request, Response } from "express";
-import { StickerPack } from "../../../models/pack_model";
-import { Sticker } from "../../../models/sticker_model"; // Assuming you have a Sticker model
+import { StickerPack } from "../../models/pack_model";
+import { Sticker } from "../../models/sticker_model"; // Assuming you have a Sticker model
 import {
   sendSuccessResponse,
   sendErrorResponse,
-} from "../../../utils/response_handler_util";
-import { validateRequest } from "../../../utils/validations_util";
+} from "../../utils/response_handler_util";
+import { validateRequest } from "../../utils/validations_util";
 import { param } from "express-validator";
-import { deleteFromStorage } from "../../../utils/storage_util";
-import User from "../../../models/users_model";
+import { deleteFromStorage } from "../../utils/storage_util";
+import User from "../../models/users_model";
 
 // Helper function for deleting sticker files
 async function deleteStickerFiles(sticker: any) {

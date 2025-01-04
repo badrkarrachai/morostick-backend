@@ -1,12 +1,6 @@
 import { Request, Response } from "express";
-import {
-  sendErrorResponse,
-  sendSuccessResponse,
-} from "../../utils/response_handler_util";
-import {
-  prepareTokenRefreshResponse,
-  verifyRefreshToken,
-} from "../../utils/jwt_util";
+import { sendErrorResponse, sendSuccessResponse } from "../../utils/response_handler_util";
+import { prepareTokenRefreshResponse, verifyRefreshToken } from "../../utils/jwt_util";
 import User from "../../models/users_model";
 
 // This controller is responsible for refreshing the access token
@@ -66,10 +60,7 @@ export const refreshToken = async (req: Request, res: Response) => {
     }
 
     // Handle token verification errors
-    if (
-      error.name === "JsonWebTokenError" ||
-      error.name === "TokenExpiredError"
-    ) {
+    if (error.name === "JsonWebTokenError" || error.name === "TokenExpiredError") {
       return sendErrorResponse({
         res,
         message: "Invalid refresh token",
@@ -85,8 +76,7 @@ export const refreshToken = async (req: Request, res: Response) => {
       res,
       message: "Failed to refresh tokens",
       errorCode: "REFRESH_TOKEN_ERROR",
-      errorDetails:
-        "An unexpected error occurred. Please try logging in again.",
+      errorDetails: "An unexpected error occurred. Please try logging in again.",
       status: 500,
     });
   }

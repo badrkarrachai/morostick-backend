@@ -31,9 +31,7 @@ const getRandomWeight = (): number => {
   return Math.random() * 0.5 + 0.75; // Returns a value between 0.75 and 1.25
 };
 
-async function analyzeUserPreferences(
-  userId: string
-): Promise<UserPreferences | null> {
+async function analyzeUserPreferences(userId: string): Promise<UserPreferences | null> {
   const user = await User.findById(userId)
     .select("packs favoritesPacks stickers favoritesStickers")
     .populate([
@@ -66,43 +64,36 @@ async function analyzeUserPreferences(
     pack.categories.forEach((cat) => {
       const catId = cat.toString();
       const randomMultiplier = getRandomWeight();
-      categoryWeights[catId] =
-        (categoryWeights[catId] || 0) + packWeight * randomMultiplier;
+      categoryWeights[catId] = (categoryWeights[catId] || 0) + packWeight * randomMultiplier;
     });
 
     creators.add(pack.creator.toString());
 
-    const terms = [
-      ...(pack.name?.toLowerCase().split(/\W+/) || []),
-      ...(pack.description?.toLowerCase().split(/\W+/) || []),
-    ].filter((term) => term.length > 2);
+    const terms = [...(pack.name?.toLowerCase().split(/\W+/) || []), ...(pack.description?.toLowerCase().split(/\W+/) || [])].filter(
+      (term) => term.length > 2
+    );
     terms.forEach((term) => keywords.add(term));
 
     if (pack.isAnimatedPack) animatedCount++;
     totalItems++;
   });
 
-  [...(user.stickers || []), ...(user.favoritesStickers || [])].forEach(
-    (sticker) => {
-      sticker.categories.forEach((cat) => {
-        const catId = cat.toString();
-        const randomMultiplier = getRandomWeight();
-        categoryWeights[catId] =
-          (categoryWeights[catId] || 0) + stickerWeight * randomMultiplier;
-      });
+  [...(user.stickers || []), ...(user.favoritesStickers || [])].forEach((sticker) => {
+    sticker.categories.forEach((cat) => {
+      const catId = cat.toString();
+      const randomMultiplier = getRandomWeight();
+      categoryWeights[catId] = (categoryWeights[catId] || 0) + stickerWeight * randomMultiplier;
+    });
 
-      if (sticker.isAnimated) animatedCount++;
-      totalItems++;
-    }
-  );
+    if (sticker.isAnimated) animatedCount++;
+    totalItems++;
+  });
 
   // Add small random variation to animated preference threshold
   const animatedThreshold = 0.5 + (Math.random() * 0.1 - 0.05); // 45-55% threshold
 
   return {
-    categories: Object.keys(categoryWeights).map(
-      (id) => new Types.ObjectId(id)
-    ),
+    categories: Object.keys(categoryWeights).map((id) => new Types.ObjectId(id)),
     creators: Array.from(creators),
     keywords: Array.from(keywords),
     isAnimatedPreferred: animatedCount > totalItems * animatedThreshold,
@@ -110,24 +101,25 @@ async function analyzeUserPreferences(
   };
 }
 
-export const getRecommendedPacks = async (
-  userId?: string
-): Promise<PackView[]> => {
-  let pipeline: PipelineStage[];
+export const getRecommendedPacks = async (userId?: string, hiddenPacks: string[] = []): Promise<PackView[]> => {
+  // Convert string IDs to ObjectIds
+  const hiddenPackIds = hiddenPacks.map((id) => new Types.ObjectId(id));
+
+  const baseMatch = {
+    isPrivate: false,
+    isAuthorized: true,
+    ...(hiddenPackIds.length > 0 && {
+      _id: { $nin: hiddenPackIds },
+    }),
+  };
 
   if (!userId) {
-    // Randomized default pipeline
     const yearWeight = getRandomInRange(5, 15);
     const categoryWeight = getRandomInRange(1, 3);
     const stickerWeight = getRandomInRange(1, 3);
 
-    pipeline = [
-      {
-        $match: {
-          isPrivate: false,
-          isAuthorized: true,
-        },
-      },
+    const pipeline: PipelineStage[] = [
+      { $match: baseMatch },
       {
         $addFields: {
           defaultScore: {
@@ -135,210 +127,149 @@ export const getRecommendedPacks = async (
               { $multiply: [{ $size: "$categories" }, categoryWeight] },
               { $multiply: [{ $size: "$stickers" }, stickerWeight] },
               {
-                $multiply: [
-                  {
-                    $subtract: [{ $year: "$createdAt" }, 2020],
-                  },
-                  yearWeight,
-                ],
+                $multiply: [{ $subtract: [{ $year: "$createdAt" }, 2020] }, yearWeight],
               },
-              { $multiply: [{ $rand: {} }, getRandomInRange(20, 50)] }, // Random factor
+              { $multiply: [{ $rand: {} }, getRandomInRange(20, 50)] },
             ],
           },
         },
       },
       { $sort: { defaultScore: -1 } },
-      { $limit: getRandomInRange(5, 8) }, // Randomized result count
+      { $limit: getRandomInRange(5, 8) },
     ];
-  } else {
-    const userPreferences = await analyzeUserPreferences(userId);
 
-    if (!userPreferences) {
-      // Randomized fallback pipeline
-      const yearWeight = getRandomInRange(5, 15);
-      pipeline = [
-        {
-          $match: {
-            isPrivate: false,
-            isAuthorized: true,
-            _id: {
-              $nin: await User.findById(userId)
-                .select("favoritesPacks")
-                .then((u) => u?.favoritesPacks || []),
-            },
+    const packs = await StickerPack.aggregate(pipeline);
+    return transformPacks(packs);
+  }
+
+  const userPreferences = await analyzeUserPreferences(userId);
+
+  if (!userPreferences) {
+    const yearWeight = getRandomInRange(5, 15);
+    const pipeline: PipelineStage[] = [
+      { $match: baseMatch },
+      {
+        $addFields: {
+          defaultScore: {
+            $add: [
+              { $multiply: [{ $size: "$categories" }, getRandomInRange(1, 3)] },
+              { $multiply: [{ $size: "$stickers" }, getRandomInRange(1, 3)] },
+              {
+                $multiply: [{ $subtract: [{ $year: "$createdAt" }, 2020] }, yearWeight],
+              },
+              { $multiply: [{ $rand: {} }, getRandomInRange(20, 50)] },
+            ],
           },
         },
-        {
-          $addFields: {
-            defaultScore: {
-              $add: [
-                {
-                  $multiply: [{ $size: "$categories" }, getRandomInRange(1, 3)],
-                },
-                { $multiply: [{ $size: "$stickers" }, getRandomInRange(1, 3)] },
-                {
-                  $multiply: [
+      },
+      { $sort: { defaultScore: -1 } },
+      { $limit: getRandomInRange(5, 8) },
+    ];
+
+    const packs = await StickerPack.aggregate(pipeline);
+    if (packs.length === 0) {
+      return transformPacks(await StickerPack.aggregate([{ $match: baseMatch }, { $sample: { size: getRandomInRange(5, 8) } }]));
+    }
+    return transformPacks(packs);
+  }
+
+  // Personalized recommendations
+  const categoryBaseWeight = getRandomInRange(40, 60);
+  const creatorWeight = getRandomInRange(250, 350);
+  const animationWeight = getRandomInRange(150, 250);
+  const keywordWeight = getRandomInRange(40, 60);
+
+  const pipeline: PipelineStage[] = [
+    { $match: baseMatch },
+    {
+      $addFields: {
+        terms: {
+          $concat: [{ $toLower: "$name" }, " ", { $ifNull: [{ $toLower: "$description" }, ""] }],
+        },
+      },
+    },
+    {
+      $addFields: {
+        recommendationScore: {
+          $add: [
+            {
+              $reduce: {
+                input: "$categories",
+                initialValue: 0,
+                in: {
+                  $add: [
+                    "$$value",
                     {
-                      $subtract: [{ $year: "$createdAt" }, 2020],
-                    },
-                    yearWeight,
-                  ],
-                },
-                { $multiply: [{ $rand: {} }, getRandomInRange(20, 50)] },
-              ],
-            },
-          },
-        },
-        { $sort: { defaultScore: -1 } },
-        { $limit: getRandomInRange(5, 8) },
-      ];
-    } else {
-      // Randomize weights for different factors
-      const categoryBaseWeight = getRandomInRange(40, 60);
-      const creatorWeight = getRandomInRange(250, 350);
-      const animationWeight = getRandomInRange(150, 250);
-      const keywordWeight = getRandomInRange(40, 60);
-
-      pipeline = [
-        {
-          $match: {
-            isPrivate: false,
-            isAuthorized: true,
-            _id: {
-              $nin: await User.findById(userId)
-                .select("favoritesPacks")
-                .then((u) => u?.favoritesPacks || []),
-            },
-          },
-        },
-        {
-          $addFields: {
-            terms: {
-              $concat: [
-                { $toLower: "$name" },
-                " ",
-                { $ifNull: [{ $toLower: "$description" }, ""] },
-              ],
-            },
-          },
-        },
-        {
-          $addFields: {
-            recommendationScore: {
-              $add: [
-                {
-                  $reduce: {
-                    input: "$categories",
-                    initialValue: 0,
-                    in: {
-                      $add: [
-                        "$$value",
+                      $ifNull: [
                         {
-                          $ifNull: [
+                          $multiply: [
                             {
-                              $multiply: [
-                                {
-                                  $toDouble: {
-                                    $getField: {
-                                      field: { $toString: "$$this" },
-                                      input: userPreferences.categoryWeights,
-                                    },
-                                  },
+                              $toDouble: {
+                                $getField: {
+                                  field: { $toString: "$$this" },
+                                  input: userPreferences.categoryWeights,
                                 },
-                                categoryBaseWeight,
-                              ],
+                              },
                             },
-                            0,
+                            categoryBaseWeight,
                           ],
                         },
+                        0,
                       ],
                     },
-                  },
-                },
-                {
-                  $cond: {
-                    if: {
-                      $in: [
-                        { $arrayElemAt: ["$creator", 0] },
-                        userPreferences.creators.map(
-                          (id) => new Types.ObjectId(id)
-                        ),
-                      ],
-                    },
-                    then: creatorWeight,
-                    else: 0,
-                  },
-                },
-                {
-                  $cond: {
-                    if: {
-                      $eq: [
-                        "$isAnimatedPack",
-                        userPreferences.isAnimatedPreferred,
-                      ],
-                    },
-                    then: animationWeight,
-                    else: 0,
-                  },
-                },
-                {
-                  $multiply: [
-                    {
-                      $size: {
-                        $setIntersection: [
-                          { $split: ["$terms", " "] },
-                          userPreferences.keywords,
-                        ],
-                      },
-                    },
-                    keywordWeight,
                   ],
                 },
-                { $multiply: [{ $rand: {} }, getRandomInRange(20, 50)] }, // Random factor
+              },
+            },
+            {
+              $cond: {
+                if: {
+                  $in: ["$creator", userPreferences.creators.map((id) => new Types.ObjectId(id))],
+                },
+                then: creatorWeight,
+                else: 0,
+              },
+            },
+            {
+              $cond: {
+                if: {
+                  $eq: ["$isAnimatedPack", userPreferences.isAnimatedPreferred],
+                },
+                then: animationWeight,
+                else: 0,
+              },
+            },
+            {
+              $multiply: [
+                {
+                  $size: {
+                    $setIntersection: [{ $split: ["$terms", " "] }, userPreferences.keywords],
+                  },
+                },
+                keywordWeight,
               ],
             },
-          },
+            { $multiply: [{ $rand: {} }, getRandomInRange(20, 50)] },
+          ],
         },
-        { $sort: { recommendationScore: -1 } },
-        { $limit: getRandomInRange(5, 8) },
-      ];
-    }
-  }
+      },
+    },
+    { $sort: { recommendationScore: -1 } },
+    { $limit: getRandomInRange(5, 8) },
+  ];
 
   try {
     const packs = await StickerPack.aggregate(pipeline);
 
     if (packs.length === 0) {
-      const fallbackPacks = await StickerPack.aggregate([
-        {
-          $match: {
-            isPrivate: false,
-            isAuthorized: true,
-            ...(userId && {
-              _id: {
-                $nin: await User.findById(userId)
-                  .select("favoritesPacks")
-                  .then((u) => u?.favoritesPacks || []),
-              },
-            }),
-          },
-        },
-        { $sample: { size: getRandomInRange(5, 8) } },
-      ]);
+      const fallbackPacks = await StickerPack.aggregate([{ $match: baseMatch }, { $sample: { size: getRandomInRange(5, 8) } }]);
       return transformPacks(fallbackPacks);
     }
 
     return transformPacks(packs);
   } catch (error) {
-    const emergencyPacks = await StickerPack.aggregate([
-      {
-        $match: {
-          isPrivate: false,
-          isAuthorized: true,
-        },
-      },
-      { $sample: { size: getRandomInRange(5, 8) } },
-    ]);
+    console.error("Error in recommendation pipeline:", error);
+    const emergencyPacks = await StickerPack.aggregate([{ $match: baseMatch }, { $sample: { size: getRandomInRange(5, 8) } }]);
     return transformPacks(emergencyPacks);
   }
 };

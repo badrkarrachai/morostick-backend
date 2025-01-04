@@ -154,6 +154,7 @@ PackSchema.path("categories").validate(function (
 interface UpdatedPackMethods extends IPackMethods {
   recordView(options: { userId?: string }): Promise<boolean>;
   incrementStats(field: keyof typeof StatsSchema.obj): Promise<void>;
+  decrementStats(field: keyof typeof StatsSchema.obj): Promise<void>;
 }
 
 // Combined methods
@@ -285,6 +286,26 @@ const methods: UpdatedPackMethods = {
     const update = { $inc: {} };
     update.$inc[`stats.${field}`] = 1;
     await this.model("Pack").updateOne({ _id: this._id }, update);
+  },
+
+  async decrementStats(field: keyof typeof StatsSchema.obj): Promise<void> {
+    const update = { $inc: {} };
+    update.$inc[`stats.${field}`] = -1;
+
+    // Ensure we don't go below 0
+    const options = {
+      new: true, // Return the modified document
+      runValidators: true, // Run schema validators
+    };
+
+    await this.model("Pack").findOneAndUpdate(
+      {
+        _id: this._id,
+        [`stats.${field}`]: { $gt: 0 }, // Only decrement if current value > 0
+      },
+      update,
+      options
+    );
   },
 };
 

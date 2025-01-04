@@ -1,14 +1,14 @@
 import { Request, Response } from "express";
-import { StickerPack } from "../../../models/pack_model";
-import { Sticker } from "../../../models/sticker_model";
+import { StickerPack } from "../../models/pack_model";
+import { Sticker } from "../../models/sticker_model";
 import {
   sendSuccessResponse,
   sendErrorResponse,
-} from "../../../utils/response_handler_util";
-import { validateRequest } from "../../../utils/validations_util";
+} from "../../utils/response_handler_util";
+import { validateRequest } from "../../utils/validations_util";
 import { body, param } from "express-validator";
 import { Types } from "mongoose";
-import { transformPack } from "../../../utils/responces_templates/response_views_transformer";
+import { transformPack } from "../../utils/responces_templates/response_views_transformer";
 
 export const reorderStickersValidationRules = [
   param("packId").isMongoId().withMessage("Invalid pack ID"),

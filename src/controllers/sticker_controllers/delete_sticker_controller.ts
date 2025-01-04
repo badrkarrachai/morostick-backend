@@ -1,14 +1,14 @@
 import { Request, Response } from "express";
 import { Types } from "mongoose";
-import { Sticker } from "../../../models/sticker_model";
-import { StickerPack } from "../../../models/pack_model";
-import { deleteFromStorage } from "../../../utils/storage_util";
+import { Sticker } from "../../models/sticker_model";
+import { StickerPack } from "../../models/pack_model";
+import { deleteFromStorage } from "../../utils/storage_util";
 import {
   sendSuccessResponse,
   sendErrorResponse,
-} from "../../../utils/response_handler_util";
+} from "../../utils/response_handler_util";
 import { body, param } from "express-validator";
-import { validateRequest } from "../../../utils/validations_util";
+import { validateRequest } from "../../utils/validations_util";
 
 // Validation rules for single sticker deletion
 export const deleteStickerValidationRules = [

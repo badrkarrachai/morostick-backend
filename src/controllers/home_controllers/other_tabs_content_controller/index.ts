@@ -2,12 +2,12 @@ import { Request, Response } from "express";
 import { body, query } from "express-validator";
 import { Category } from "../../../models/category_model";
 import { StickerPack } from "../../../models/pack_model";
-import {
-  sendSuccessResponse,
-  sendErrorResponse,
-} from "../../../utils/response_handler_util";
+import { sendSuccessResponse, sendErrorResponse } from "../../../utils/response_handler_util";
 import { validateRequest } from "../../../utils/validations_util";
 import { transformPacks } from "../../../utils/responces_templates/response_views_transformer";
+import { extractToken } from "../../../routes/middlewares/auth_middleware";
+import { verifyAccessToken } from "../../../utils/jwt_util";
+import User from "../../../models/users_model";
 
 // Define the categories mapping
 const CATEGORY_MAPPINGS = {
@@ -33,47 +33,25 @@ export const getPacksByCategoriesValidationRules = [
     .custom((value: string) => {
       return Object.keys(CATEGORY_MAPPINGS).includes(value);
     })
-    .withMessage(
-      "Sorry, there is no content for this category. Please try again with another category."
-    ),
-  query("page")
-    .optional()
-    .isInt({ min: 1 })
-    .withMessage("Page must be a positive integer"),
-  query("limit")
-    .optional()
-    .isInt({ min: 1, max: 50 })
-    .withMessage("Limit must be between 1 and 50"),
-  query("sortBy")
-    .optional()
-    .isIn(["downloads", "views", "favorites", "createdAt"])
-    .withMessage("Invalid sort field"),
-  query("sortOrder")
-    .optional()
-    .isIn(["asc", "desc"])
-    .withMessage("Sort order must be 'asc' or 'desc'"),
+    .withMessage("Sorry, there is no content for this category. Please try again with another category."),
+  query("page").optional().isInt({ min: 1 }).withMessage("Page must be a positive integer"),
+  query("limit").optional().isInt({ min: 1, max: 50 }).withMessage("Limit must be between 1 and 50"),
+  query("sortBy").optional().isIn(["downloads", "views", "favorites", "createdAt"]).withMessage("Invalid sort field"),
+  query("sortOrder").optional().isIn(["asc", "desc"]).withMessage("Sort order must be 'asc' or 'desc'"),
 ];
 
 export const getPacksByCategories = async (req: Request, res: Response) => {
   try {
     // Validate request
-    const validationErrors = await validateRequest(
-      req,
-      res,
-      getPacksByCategoriesValidationRules
-    );
+    const validationErrors = await validateRequest(req, res, getPacksByCategoriesValidationRules);
 
     if (validationErrors !== "validation successful") {
       return sendErrorResponse({
         res,
         message: "Invalid input",
         errorCode: "INVALID_INPUT",
-        errorFields: Array.isArray(validationErrors)
-          ? validationErrors
-          : undefined,
-        errorDetails: Array.isArray(validationErrors)
-          ? validationErrors.join(", ")
-          : validationErrors,
+        errorFields: Array.isArray(validationErrors) ? validationErrors : undefined,
+        errorDetails: Array.isArray(validationErrors) ? validationErrors.join(", ") : validationErrors,
         status: 400,
       });
     }
@@ -83,6 +61,23 @@ export const getPacksByCategories = async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const sortBy = (req.query.sortBy as string) || "createdAt";
     const sortOrder = (req.query.sortOrder as "asc" | "desc") || "desc";
+
+    // Get user ID and hidden packs if authenticated
+    let userId;
+    let hiddenPacks = [];
+    try {
+      if (req.header("Authorization") !== undefined) {
+        const token = extractToken(req.header("Authorization"));
+        const decoded = await verifyAccessToken(token);
+        userId = (req.user = decoded.user).id;
+
+        // Fetch hidden packs if user is authenticated
+        const user = await User.findById(userId).select("hiddenPacks");
+        hiddenPacks = user?.hiddenPacks || [];
+      }
+    } catch (error) {
+      // Continue without user context if auth fails
+    }
 
     // Get category names from mapping
     const categoryNames = CATEGORY_MAPPINGS[categoryKey];
@@ -100,8 +95,7 @@ export const getPacksByCategories = async (req: Request, res: Response) => {
         res,
         message: "Categories not found",
         errorCode: "CATEGORIES_NOT_FOUND",
-        errorDetails:
-          "Sorry, there is no content for this category. Please try again with another category.",
+        errorDetails: "Sorry, there is no content for this category. Please try again with another category.",
         status: 404,
       });
     }
@@ -120,13 +114,19 @@ export const getPacksByCategories = async (req: Request, res: Response) => {
     // Calculate skip value for pagination
     const skip = (page - 1) * limit;
 
+    // Build base query
+    const baseQuery = {
+      categories: { $in: categoryIds },
+      isPrivate: false,
+      isAuthorized: true,
+      ...(hiddenPacks.length > 0 && {
+        _id: { $nin: hiddenPacks },
+      }),
+    };
+
     // Find packs with matching categories
     const [packs, totalPacks] = await Promise.all([
-      StickerPack.find({
-        categories: { $in: categoryIds },
-        isPrivate: false,
-        isAuthorized: true,
-      })
+      StickerPack.find(baseQuery)
         .sort(sortObj)
         .skip(skip)
         .limit(limit)
@@ -140,11 +140,7 @@ export const getPacksByCategories = async (req: Request, res: Response) => {
             select: "url",
           },
         }),
-      StickerPack.countDocuments({
-        categories: { $in: categoryIds },
-        isPrivate: false,
-        isAuthorized: true,
-      }),
+      StickerPack.countDocuments(baseQuery),
     ]);
 
     // Transform packs
@@ -177,8 +173,7 @@ export const getPacksByCategories = async (req: Request, res: Response) => {
       res,
       message: "Server error",
       errorCode: "SERVER_ERROR",
-      errorDetails:
-        "An unexpected error occurred while fetching packs. Please try again later.",
+      errorDetails: "An unexpected error occurred while fetching packs. Please try again later.",
       status: 500,
     });
   }

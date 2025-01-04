@@ -25,6 +25,7 @@ export interface IPackMethods {
   moveSticker(stickerId: Types.ObjectId, newPosition: number): Promise<void>;
   recordView(options: { userId?: string }): Promise<boolean>;
   incrementStats(field: keyof IStats): Promise<void>;
+  decrementStats(field: keyof IStats): Promise<void>;
 }
 
 // Combined interface for document with methods

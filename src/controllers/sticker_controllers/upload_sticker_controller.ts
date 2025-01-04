@@ -1,22 +1,22 @@
 import { Request, Response } from "express";
-import { StickerPack } from "../../../models/pack_model";
-import { Sticker } from "../../../models/sticker_model";
+import { StickerPack } from "../../models/pack_model";
+import { Sticker } from "../../models/sticker_model";
 import {
   sendSuccessResponse,
   sendErrorResponse,
-} from "../../../utils/response_handler_util";
-import { validateRequest } from "../../../utils/validations_util";
+} from "../../utils/response_handler_util";
+import { validateRequest } from "../../utils/validations_util";
 import { body, param } from "express-validator";
-import { uploadToStorage } from "../../../utils/storage_util";
-import { ISticker } from "../../../interfaces/sticker_interface";
+import { uploadToStorage } from "../../utils/storage_util";
+import { ISticker } from "../../interfaces/sticker_interface";
 import {
   STICKER_REQUIREMENTS,
   PACK_REQUIREMENTS,
-} from "../../../config/app_requirement";
+} from "../../config/app_requirement";
 import { Types } from "mongoose";
-import { Category } from "../../../models/category_model";
-import { createCategoryFromName } from "../../categories_controllers/create_category_controller";
-import { transformSticker } from "../../../utils/responces_templates/response_views_transformer";
+import { Category } from "../../models/category_model";
+import { createCategoryFromName } from "../categories_controllers/create_category_controller";
+import { transformSticker } from "../../utils/responces_templates/response_views_transformer";
 
 // Validation rules for sticker upload
 export const uploadStickerValidationRules = [

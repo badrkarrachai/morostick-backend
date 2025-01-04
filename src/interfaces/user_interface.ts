@@ -67,6 +67,7 @@ export interface IUser extends Document {
   packs: Types.ObjectId[];
   favoritesPacks: Types.ObjectId[];
   favoritesStickers: Types.ObjectId[];
+  hiddenPacks: Types.ObjectId[];
 
   // Timestamps
   createdAt: Date;
