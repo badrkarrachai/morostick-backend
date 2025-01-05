@@ -70,6 +70,8 @@ export const getPackById = async (req: Request, res: Response) => {
       includeStickers: true,
       includeTotalCount: true,
       stickersLimit: 30,
+      userId: userId,
+      useCache: false,
     });
 
     // Check if pack is in user's favorites

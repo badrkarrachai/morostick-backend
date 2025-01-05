@@ -69,6 +69,7 @@ export interface StickerView {
     views: number;
     favorites: number;
   };
+  isFavorite: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
