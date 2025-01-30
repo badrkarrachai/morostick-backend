@@ -7,6 +7,7 @@ import { uploadSticker } from "../../controllers/sticker_controllers/upload_stic
 import { bulkDeleteStickers, deleteSticker } from "../../controllers/sticker_controllers/delete_sticker_controller";
 import { uploadStickerFile } from "../middlewares/sticker_upload_middleware";
 import { addStickerToFavorites, addStickerToFavoritesValidationRules } from "../../controllers/sticker_controllers/toggle_sticker_favorite";
+import { bulkUploadStickers } from "../../controllers/sticker_controllers/upload_many_stickers_controller";
 
 const router = Router();
 const checkAD = [checkAccountNotDeleted, checkAccountActivated];
@@ -15,6 +16,7 @@ const checkAD = [checkAccountNotDeleted, checkAccountActivated];
 
 // CRUD routes
 router.post("/upload/:packId", auth, checkAD, uploadStickerFile, wrapAsync(uploadSticker));
+router.post("/upload/bulk/:packId", auth, checkAD, bulkUploadStickers);
 router.delete("/delete/:stickerId", auth, checkAD, wrapAsync(deleteSticker));
 router.delete("/bulk-delete/:packId", auth, checkAD, wrapAsync(bulkDeleteStickers));
 

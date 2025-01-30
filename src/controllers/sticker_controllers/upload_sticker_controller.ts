@@ -1,18 +1,11 @@
 import { Request, Response } from "express";
 import { StickerPack } from "../../models/pack_model";
 import { Sticker } from "../../models/sticker_model";
-import {
-  sendSuccessResponse,
-  sendErrorResponse,
-} from "../../utils/response_handler_util";
+import { sendSuccessResponse, sendErrorResponse } from "../../utils/response_handler_util";
 import { validateRequest } from "../../utils/validations_util";
 import { body, param } from "express-validator";
 import { uploadToStorage } from "../../utils/storage_util";
-import { ISticker } from "../../interfaces/sticker_interface";
-import {
-  STICKER_REQUIREMENTS,
-  PACK_REQUIREMENTS,
-} from "../../config/app_requirement";
+import { STICKER_REQUIREMENTS, PACK_REQUIREMENTS } from "../../config/app_requirement";
 import { Types } from "mongoose";
 import { Category } from "../../models/category_model";
 import { createCategoryFromName } from "../categories_controllers/create_category_controller";
@@ -65,17 +58,10 @@ export const uploadSticker = async (req: Request, res: Response) => {
 
     // Validate and parse emojis
     try {
-      emojis = Array.isArray(req.body.emojis)
-        ? req.body.emojis
-        : JSON.parse(req.body.emojis);
+      emojis = Array.isArray(req.body.emojis) ? req.body.emojis : JSON.parse(req.body.emojis);
 
-      if (
-        !Array.isArray(emojis) ||
-        emojis.length > STICKER_REQUIREMENTS.maxEmojis
-      ) {
-        throw new Error(
-          `Invalid emojis format or exceeds maximum of ${STICKER_REQUIREMENTS.maxEmojis} emojis`
-        );
+      if (!Array.isArray(emojis) || emojis.length > STICKER_REQUIREMENTS.maxEmojis) {
+        throw new Error(`Invalid emojis format or exceeds maximum of ${STICKER_REQUIREMENTS.maxEmojis} emojis`);
       }
     } catch (error) {
       return sendErrorResponse({
@@ -88,23 +74,15 @@ export const uploadSticker = async (req: Request, res: Response) => {
     }
 
     // Validate request
-    const validationErrors = await validateRequest(
-      req,
-      res,
-      uploadStickerValidationRules
-    );
+    const validationErrors = await validateRequest(req, res, uploadStickerValidationRules);
 
     if (validationErrors !== "validation successful") {
       return sendErrorResponse({
         res,
         message: "Invalid input",
         errorCode: "INVALID_INPUT",
-        errorFields: Array.isArray(validationErrors)
-          ? validationErrors
-          : undefined,
-        errorDetails: Array.isArray(validationErrors)
-          ? validationErrors.join(", ")
-          : validationErrors,
+        errorFields: Array.isArray(validationErrors) ? validationErrors : undefined,
+        errorDetails: Array.isArray(validationErrors) ? validationErrors.join(", ") : validationErrors,
         status: 400,
       });
     }
@@ -121,9 +99,7 @@ export const uploadSticker = async (req: Request, res: Response) => {
     }
 
     // Find and validate pack with proper population
-    const pack = await StickerPack.findById(packId)
-      .populate("categories")
-      .populate("creator");
+    const pack = await StickerPack.findById(packId).populate("categories").populate("creator");
 
     if (!pack) {
       return sendErrorResponse({
@@ -143,8 +119,7 @@ export const uploadSticker = async (req: Request, res: Response) => {
         res,
         message: "Unauthorized",
         errorCode: "UNAUTHORIZED",
-        errorDetails:
-          "You do not have permission to add stickers to this pack.",
+        errorDetails: "You do not have permission to add stickers to this pack.",
         status: 403,
       });
     }
@@ -153,9 +128,7 @@ export const uploadSticker = async (req: Request, res: Response) => {
     let parsedCategoryIds: string[] = [];
     if (categoryIds) {
       try {
-        parsedCategoryIds = Array.isArray(categoryIds)
-          ? categoryIds
-          : JSON.parse(categoryIds);
+        parsedCategoryIds = Array.isArray(categoryIds) ? categoryIds : JSON.parse(categoryIds);
 
         if (!Array.isArray(parsedCategoryIds)) {
           return sendErrorResponse({
@@ -181,9 +154,7 @@ export const uploadSticker = async (req: Request, res: Response) => {
     let parsedCategoryNames: string[] = [];
     if (categoryName) {
       try {
-        parsedCategoryNames = Array.isArray(categoryName)
-          ? categoryName
-          : JSON.parse(categoryName);
+        parsedCategoryNames = Array.isArray(categoryName) ? categoryName : JSON.parse(categoryName);
 
         if (!Array.isArray(parsedCategoryNames)) {
           return sendErrorResponse({
@@ -205,9 +176,7 @@ export const uploadSticker = async (req: Request, res: Response) => {
 
     // First try user provided category IDs
     if (parsedCategoryIds.length > 0) {
-      const categoryObjectIds = parsedCategoryIds.map(
-        (id) => new Types.ObjectId(id)
-      );
+      const categoryObjectIds = parsedCategoryIds.map((id) => new Types.ObjectId(id));
       const categories = await Category.find({
         _id: { $in: categoryObjectIds },
         isActive: true,
@@ -228,9 +197,7 @@ export const uploadSticker = async (req: Request, res: Response) => {
     // Then try category names if no valid IDs were provided
     else if (parsedCategoryNames.length > 0) {
       try {
-        const categoryPromises = parsedCategoryNames.map((name) =>
-          createCategoryFromName(name.trim(), true)
-        );
+        const categoryPromises = parsedCategoryNames.map((name) => createCategoryFromName(name.trim(), true));
         const categoryIds = await Promise.all(categoryPromises);
         stickerCategories = categoryIds;
       } catch (error) {
@@ -332,10 +299,7 @@ export const uploadSticker = async (req: Request, res: Response) => {
     await sticker.save();
 
     // Update categories stats
-    await Category.updateMany(
-      { _id: { $in: stickerCategories } },
-      { $inc: { "stats.stickerCount": 1 } }
-    );
+    await Category.updateMany({ _id: { $in: stickerCategories } }, { $inc: { "stats.stickerCount": 1 } });
 
     // Add sticker to pack
     await pack.addSticker(sticker.id);
@@ -354,9 +318,7 @@ export const uploadSticker = async (req: Request, res: Response) => {
       res,
       message: "Server error",
       errorCode: "SERVER_ERROR",
-      errorDetails:
-        err.message ||
-        "An unexpected error occurred while uploading the sticker.",
+      errorDetails: err.message || "An unexpected error occurred while uploading the sticker.",
       status: 500,
     });
   }

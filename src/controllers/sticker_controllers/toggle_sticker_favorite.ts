@@ -7,6 +7,8 @@ import { sendSuccessResponse, sendErrorResponse } from "../../utils/response_han
 import { validateRequest } from "../../utils/validations_util";
 import { transformSticker } from "../../utils/responces_templates/response_views_transformer";
 
+const MAX_FAVORITE_STICKERS = 30;
+
 export const addStickerToFavoritesValidationRules = [
   query("stickerId").exists().withMessage("Sticker ID is required").isMongoId().withMessage("Invalid sticker ID format"),
 ];
@@ -79,7 +81,22 @@ export const addStickerToFavorites = async (req: Request, res: Response) => {
         },
       });
     } else {
-      // Add to favorites
+      // Check if user has reached the maximum favorites limit
+      if (user.favoritesStickers.length >= MAX_FAVORITE_STICKERS) {
+        // Get the oldest favorite sticker
+        const oldestFavoriteId = user.favoritesStickers[0];
+
+        // Remove the oldest favorite
+        user.favoritesStickers = user.favoritesStickers.slice(1);
+
+        // Decrement favorites count for the removed sticker
+        const oldestSticker = await Sticker.findById(oldestFavoriteId);
+        if (oldestSticker) {
+          await oldestSticker.decrementStats("favorites");
+        }
+      }
+
+      // Add new sticker to favorites (at the end of the array)
       user.favoritesStickers.push(stickerObjectId);
       await user.save();
 
@@ -89,13 +106,21 @@ export const addStickerToFavorites = async (req: Request, res: Response) => {
       // Transform sticker for response
       const stickerView = await transformSticker(sticker);
 
+      // Check if we removed an old sticker
+      const removedOldSticker = user.favoritesStickers.length === MAX_FAVORITE_STICKERS;
+
       return sendSuccessResponse({
         res,
-        message: "Sticker added to favorites successfully",
+        message: removedOldSticker
+          ? "Oldest favorite sticker was removed to add new sticker to favorites"
+          : "Sticker added to favorites successfully",
         data: {
           isFavorite: true,
           favoritesCount: sticker.stats.favorites,
           sticker: stickerView,
+          reachedLimit: removedOldSticker,
+          currentFavoriteCount: user.favoritesStickers.length,
+          maxFavorites: MAX_FAVORITE_STICKERS,
         },
       });
     }

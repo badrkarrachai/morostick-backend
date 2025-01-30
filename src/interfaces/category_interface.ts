@@ -15,6 +15,7 @@ export interface ICategory extends Document {
     stickerCount: number;
     totalViews: number;
     totalDownloads: number;
+    totalSearches: number;
   };
   createdAt: Date;
   updatedAt: Date;
