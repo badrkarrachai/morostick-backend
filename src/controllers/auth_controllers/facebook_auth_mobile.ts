@@ -2,10 +2,7 @@ import { Request, Response } from "express";
 import User from "../../models/users_model";
 import Image from "../../models/image_model";
 import bcrypt from "bcrypt";
-import {
-  sendSuccessResponse,
-  sendErrorResponse,
-} from "../../utils/response_handler_util";
+import { sendSuccessResponse, sendErrorResponse } from "../../utils/response_handler_util";
 import config from "../../config";
 import { checkAccountRecoveryStatus } from "../../utils/account_deletion_check_util";
 import { formatUserData } from "../../utils/responces_templates/user_auth_response_template";
@@ -47,10 +44,7 @@ interface FacebookAppResponse {
  * @param req Request object containing Facebook access token
  * @param res Response object
  */
-export const handleFacebookMobileAuth = async (
-  req: FacebookAuthRequest,
-  res: Response
-) => {
+export const handleFacebookMobileAuth = async (req: FacebookAuthRequest, res: Response) => {
   try {
     const { accessToken } = req.body;
 
@@ -78,9 +72,7 @@ export const handleFacebookMobileAuth = async (
       facebookData = response.data;
 
       // Verify the token belongs to your app
-      const appVerification: AxiosResponse<{ id: string }> = await axios.get(
-        `https://graph.facebook.com/app?access_token=${accessToken}`
-      );
+      const appVerification: AxiosResponse<{ id: string }> = await axios.get(`https://graph.facebook.com/app?access_token=${accessToken}`);
 
       if (appVerification.data.id !== config.facebook.appID) {
         throw new Error("Invalid application ID");
@@ -112,12 +104,25 @@ export const handleFacebookMobileAuth = async (
     const messagesForUser: string[] = [];
 
     if (user) {
+      // Check if the user has allowed facebook auth
+      if (!user.preferences.isFacebookAuthEnabled && user.facebookId !== null) {
+        return sendErrorResponse({
+          res,
+          message: "Facebook authentication is not allowed",
+          errorCode: "FACEBOOK_AUTH_NOT_ALLOWED",
+          errorDetails:
+            "Sorry, You disabled Facebook authentication, Please enable it in your account settings after logging in with a different method.",
+          status: 403,
+        });
+      }
+
       // Update existing user
       user.facebookId = facebookId;
       user.name = user.name || name || "";
       user.emailVerified = true;
       user.authProvider = "facebook";
       user.lastLogin = new Date();
+      user.preferences.isFacebookAuthEnabled = true;
 
       // Update profile picture if not set
       if (!user.avatar && picture?.data?.url) {
@@ -135,10 +140,7 @@ export const handleFacebookMobileAuth = async (
       await user.save();
     } else {
       // Create new user
-      const randomPassword = await bcrypt.hash(
-        Math.random().toString(36).slice(-8),
-        10
-      );
+      const randomPassword = await bcrypt.hash(Math.random().toString(36).slice(-8), 10);
 
       user = new User({
         name: name || "",
@@ -183,11 +185,7 @@ export const handleFacebookMobileAuth = async (
     }
 
     // Check account recovery status
-    const recoveryMessage = checkAccountRecoveryStatus(
-      user,
-      config.app.recoveryPeriod,
-      res
-    );
+    const recoveryMessage = checkAccountRecoveryStatus(user, config.app.recoveryPeriod, res);
 
     if (recoveryMessage === "deleted") {
       return sendErrorResponse({

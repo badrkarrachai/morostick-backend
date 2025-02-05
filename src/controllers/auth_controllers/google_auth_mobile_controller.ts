@@ -3,10 +3,7 @@ import axios from "axios";
 import User from "../../models/users_model";
 import Image from "../../models/image_model";
 import bcrypt from "bcrypt";
-import {
-  sendSuccessResponse,
-  sendErrorResponse,
-} from "../../utils/response_handler_util";
+import { sendSuccessResponse, sendErrorResponse } from "../../utils/response_handler_util";
 import config from "../../config";
 import { checkAccountRecoveryStatus } from "../../utils/account_deletion_check_util";
 import { formatUserData } from "../../utils/responces_templates/user_auth_response_template";
@@ -27,10 +24,7 @@ interface GoogleUserData {
   verified_email: boolean;
 }
 
-export const handleMobileGoogleAuth = async (
-  req: GoogleAuthRequest,
-  res: Response
-) => {
+export const handleMobileGoogleAuth = async (req: GoogleAuthRequest, res: Response) => {
   try {
     const { accessToken } = req.body;
 
@@ -47,14 +41,11 @@ export const handleMobileGoogleAuth = async (
     // Fetch user info from Google API
     let googleUserData: GoogleUserData;
     try {
-      const response = await axios.get<GoogleUserData>(
-        "https://www.googleapis.com/oauth2/v2/userinfo",
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
+      const response = await axios.get<GoogleUserData>("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
       googleUserData = response.data;
     } catch (error) {
       return sendErrorResponse({
@@ -66,13 +57,7 @@ export const handleMobileGoogleAuth = async (
       });
     }
 
-    const {
-      email,
-      name,
-      picture,
-      id: googleId,
-      verified_email,
-    } = googleUserData;
+    const { email, name, picture, id: googleId, verified_email } = googleUserData;
 
     if (!email || !verified_email) {
       return sendErrorResponse({
@@ -88,12 +73,25 @@ export const handleMobileGoogleAuth = async (
     let messagesForUser: string[] = [];
 
     if (user) {
+      // Check if the user has allowed google auth
+      if (!user.preferences.isGoogleAuthEnabled && user.googleId !== null) {
+        return sendErrorResponse({
+          res,
+          message: "Google authentication is not allowed",
+          errorCode: "GOOGLE_AUTH_NOT_ALLOWED",
+          errorDetails:
+            "Sorry, You disabled Google authentication, Please enable it in your account settings after logging in with a different method.",
+          status: 403,
+        });
+      }
+
       // Update existing user
       user.googleId = googleId;
       user.name = user.name || name || "";
       user.emailVerified = true;
       user.authProvider = "google";
       user.lastLogin = new Date();
+      user.preferences.isGoogleAuthEnabled = true;
 
       // Update avatar if not set and picture is available
       if (user.avatar === null && picture !== null && picture.trim() !== "") {
@@ -153,11 +151,7 @@ export const handleMobileGoogleAuth = async (
     }
 
     // Check account recovery status
-    const recoveryMessage = checkAccountRecoveryStatus(
-      user,
-      config.app.recoveryPeriod,
-      res
-    );
+    const recoveryMessage = checkAccountRecoveryStatus(user, config.app.recoveryPeriod, res);
     if (recoveryMessage === "deleted") {
       return sendErrorResponse({
         res,
@@ -204,8 +198,7 @@ export const handleMobileGoogleAuth = async (
 // Helper function to generate a random password
 async function generateRandomPassword(): Promise<string> {
   const length = 16;
-  const charset =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+";
+  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+";
   let password = "";
   for (let i = 0, n = charset.length; i < length; ++i) {
     password += charset.charAt(Math.floor(Math.random() * n));

@@ -1,24 +1,16 @@
 import { Router } from "express";
-import {
-  requestUpdateUserEmail,
-  updateUserEmailViaOTP,
-} from "../../controllers/users/updating_details/update_user_email_controller";
+import { requestUpdateUserEmail, updateUserEmailViaOTP } from "../../controllers/users/updating_details/update_user_email_controller";
 import { updateUserName } from "../../controllers/users/updating_details/update_user_name_controller";
 import { updateUserPassword } from "../../controllers/users/updating_details/update_user_password_controller";
 import { deleteUser } from "../../controllers/users/deletion/delete_user_controller";
 import { recoverUser } from "../../controllers/users/deletion/recover_user_controller";
-import {
-  requestVerifyUserEmail,
-  verifyUserEmailViaOTP,
-} from "../../controllers/users/updating_details/verify_user_email_controller";
+import { requestVerifyUserEmail, verifyUserEmailViaOTP } from "../../controllers/users/updating_details/verify_user_email_controller";
 import { checkAccountNotDeleted } from "../middlewares/check_account_deleted_middleware";
 import { checkAccountActivated } from "../middlewares/check_account_activated_middleware";
 import { auth } from "../middlewares/auth_middleware";
 import { uploadAvatarFile } from "../middlewares/sticker_upload_middleware";
-import {
-  deleteUserAvatar,
-  updateUserAvatar,
-} from "../../controllers/users/updating_details/update_user_avatar_controller";
+import { deleteUserAvatar, updateUserAvatar } from "../../controllers/users/updating_details/update_user_avatar_controller";
+import { updatePreferencesValidationRules, updateUserPreferences } from "../../controllers/auth_controllers/user_preferences";
 
 const router = Router();
 
@@ -26,23 +18,14 @@ const checkAD = [checkAccountNotDeleted, checkAccountActivated];
 
 router.post("/update-user-name", auth, checkAD, updateUserName);
 router.post("/update-user-password", auth, checkAD, updateUserPassword);
-router.post(
-  "/request-update-user-email",
-  auth,
-  checkAD,
-  requestUpdateUserEmail
-);
+router.post("/request-update-user-email", auth, checkAD, requestUpdateUserEmail);
 router.post("/update-user-email", auth, checkAD, updateUserEmailViaOTP);
 router.get("/delete-user", auth, deleteUser);
 router.get("/recover-user", auth, recoverUser);
-router.post(
-  "/request-verify-user-email",
-  auth,
-  checkAD,
-  requestVerifyUserEmail
-);
+router.post("/request-verify-user-email", auth, checkAD, requestVerifyUserEmail);
 router.post("/verify-user-email", auth, checkAD, verifyUserEmailViaOTP);
 router.put("/update-profile-picture", auth, uploadAvatarFile, updateUserAvatar);
 router.delete("/delete-profile-picture", auth, deleteUserAvatar);
+router.patch("/update-user-preferences", auth, checkAD, updatePreferencesValidationRules, updateUserPreferences);
 
 export default router;

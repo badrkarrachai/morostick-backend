@@ -37,6 +37,8 @@ export interface IUser extends Document {
     currency: string;
     language: string;
     theme: string;
+    isGoogleAuthEnabled: boolean;
+    isFacebookAuthEnabled: boolean;
   };
 
   // Social Media Links

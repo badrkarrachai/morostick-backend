@@ -32,6 +32,8 @@ const userSchema = new Schema<IUser>(
       currency: { type: String, default: "USD" },
       language: { type: String, default: "en" },
       theme: { type: String, enum: ["light", "dark"], default: "light" },
+      isGoogleAuthEnabled: { type: Boolean, default: false },
+      isFacebookAuthEnabled: { type: Boolean, default: false },
     },
     socialMedia: {
       facebook: { type: String },
