@@ -1,42 +1,17 @@
 import { Request, Response } from "express";
 import User from "../../../models/users_model";
 import validator from "validator";
-import {
-  sendSuccessResponse,
-  sendErrorResponse,
-} from "../../../utils/response_handler_util";
+import { sendSuccessResponse, sendErrorResponse } from "../../../utils/response_handler_util";
 import OTPService from "../../../utils/otp_util";
-import {
-  requestverifyEmailValidationRules,
-  validateRequest,
-  verifyEmailValidationRules,
-} from "../../../utils/validations_util";
+import { requestverifyEmailValidationRules, validateRequest, verifyEmailValidationRules } from "../../../utils/validations_util";
 import config from "../../../config";
 import { OTPOptions } from "../../../interfaces/otp_options";
 
 // Request user email verification
 export const requestVerifyUserEmail = async (req: Request, res: Response) => {
   const userId = req.user.id;
-  const { email } = req.body;
+  const email = req.user.email;
   try {
-    // Validation
-    const validationErrors = await validateRequest(
-      req,
-      res,
-      requestverifyEmailValidationRules
-    );
-    if (validationErrors !== "validation successful") {
-      return sendErrorResponse({
-        res,
-        message: "Invalid input",
-        errorCode: "INVALID_INPUT",
-        errorDetails: Array.isArray(validationErrors)
-          ? validationErrors.join(", ")
-          : validationErrors,
-        status: 400,
-      });
-    }
-
     // Sanitize inputs
     const sanitizedEmail = validator.normalizeEmail(email) || "";
 
@@ -106,8 +81,7 @@ export const requestVerifyUserEmail = async (req: Request, res: Response) => {
       res: res,
       message: "Server error",
       errorCode: "SERVER_ERROR",
-      errorDetails:
-        "An unexpected error occurred while verifying the email, Please try again later.",
+      errorDetails: "An unexpected error occurred while verifying the email, Please try again later.",
       status: 500,
     });
   }
@@ -119,19 +93,13 @@ export const verifyUserEmailViaOTP = async (req: Request, res: Response) => {
   const { email, otp } = req.body;
   try {
     // Validation
-    const validationErrors = await validateRequest(
-      req,
-      res,
-      verifyEmailValidationRules
-    );
+    const validationErrors = await validateRequest(req, res, verifyEmailValidationRules);
     if (validationErrors !== "validation successful") {
       return sendErrorResponse({
         res,
         message: "Invalid input",
         errorCode: "INVALID_INPUT",
-        errorDetails: Array.isArray(validationErrors)
-          ? validationErrors.join(", ")
-          : validationErrors,
+        errorDetails: Array.isArray(validationErrors) ? validationErrors.join(", ") : validationErrors,
         status: 400,
       });
     }
@@ -173,12 +141,7 @@ export const verifyUserEmailViaOTP = async (req: Request, res: Response) => {
     }
 
     // Verify Code locally
-    const otpRes = await OTPService.verifyOTPLocally(
-      user,
-      otp,
-      config.otp.maxAttempts,
-      true
-    );
+    const otpRes = await OTPService.verifyOTPLocally(user, otp, config.otp.maxAttempts, true);
     if (!otpRes.isValid) {
       return sendErrorResponse({
         res: res,
@@ -203,8 +166,7 @@ export const verifyUserEmailViaOTP = async (req: Request, res: Response) => {
       res: res,
       message: "Server error",
       errorCode: "SERVER_ERROR",
-      errorDetails:
-        "An unexpected error occurred while verifying the email, Please try again later.",
+      errorDetails: "An unexpected error occurred while verifying the email, Please try again later.",
       status: 500,
     });
   }

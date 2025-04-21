@@ -7,7 +7,9 @@ export interface IUser extends Document {
   email: string;
   emailVerified: boolean;
   password: string;
+  passwordLastChanged: Date;
   avatar?: Types.ObjectId | IImages;
+  coverImage?: Types.ObjectId | IImages;
   isActivated: boolean;
   role: string;
   lastLogin?: Date;

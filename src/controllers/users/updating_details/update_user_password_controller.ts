@@ -3,33 +3,21 @@ import User from "../../../models/users_model";
 import bcrypt from "bcrypt";
 import validator from "validator";
 import config from "../../../config";
-import {
-  sendErrorResponse,
-  sendSuccessResponse,
-} from "../../../utils/response_handler_util";
-import {
-  updateProfilePasswordValidationRules,
-  validateRequest,
-} from "../../../utils/validations_util";
+import { sendErrorResponse, sendSuccessResponse } from "../../../utils/response_handler_util";
+import { updateProfilePasswordValidationRules, validateRequest } from "../../../utils/validations_util";
 
 export const updateUserPassword = async (req: Request, res: Response) => {
   const userId = req.user.id;
-  const { email, currentPassword, newPassword, confirmPassword } = req.body;
+  const { email, currentPassword, newPassword, confirmNewPassword } = req.body;
   try {
     // Validation
-    const validationErrors = await validateRequest(
-      req,
-      res,
-      updateProfilePasswordValidationRules
-    );
+    const validationErrors = await validateRequest(req, res, updateProfilePasswordValidationRules);
     if (validationErrors !== "validation successful") {
       return sendErrorResponse({
         res,
         message: "Invalid input",
         errorCode: "INVALID_INPUT",
-        errorDetails: Array.isArray(validationErrors)
-          ? validationErrors.join(", ")
-          : validationErrors,
+        errorDetails: Array.isArray(validationErrors) ? validationErrors.join(", ") : validationErrors,
         status: 400,
       });
     }
@@ -45,6 +33,7 @@ export const updateUserPassword = async (req: Request, res: Response) => {
         message: "User not found",
         errorCode: "USER_NOT_FOUND",
         errorDetails: "No user found with the provided email",
+        errorFields: ["email"],
         status: 404,
       });
     }
@@ -68,6 +57,7 @@ export const updateUserPassword = async (req: Request, res: Response) => {
         message: "Current password is incorrect",
         errorCode: "INCORRECT_PASSWORD",
         errorDetails: "The provided current password is incorrect",
+        errorFields: ["currentPassword"],
       });
     }
 
@@ -77,8 +67,19 @@ export const updateUserPassword = async (req: Request, res: Response) => {
         res: res,
         message: "New password must be different",
         errorCode: "SAME_PASSWORD",
-        errorDetails:
-          "The new password must be different from the current password",
+        errorDetails: "The new password must be different from the current password",
+        errorFields: ["newPassword"],
+      });
+    }
+
+    // check Confirm password
+    if (newPassword != confirmNewPassword) {
+      return sendErrorResponse({
+        res: res,
+        message: "Passwords doesn't match",
+        errorCode: "SAME_PASSWORD",
+        errorDetails: "Confirm password should be the same as New password.",
+        errorFields: ["confirmPassword"],
       });
     }
 
@@ -88,6 +89,7 @@ export const updateUserPassword = async (req: Request, res: Response) => {
 
     // Update user password
     user.password = hashedPassword;
+    user.passwordLastChanged = new Date();
     await user.save();
 
     // Send response
@@ -102,8 +104,7 @@ export const updateUserPassword = async (req: Request, res: Response) => {
       res: res,
       message: "Server error",
       errorCode: "SERVER_ERROR",
-      errorDetails:
-        "An unexpected error occurred while updating the password, Please try again later.",
+      errorDetails: "An unexpected error occurred while updating the password, Please try again later.",
       status: 500,
     });
   }

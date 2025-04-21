@@ -8,7 +8,9 @@ const userSchema = new Schema<IUser>(
     email: { type: String, required: true, unique: true },
     emailVerified: { type: Boolean, default: false },
     password: { type: String, required: true },
+    passwordLastChanged: { type: Date, default: Date.now },
     avatar: { type: Schema.Types.ObjectId, ref: "Image" },
+    coverImage: { type: Schema.Types.ObjectId, ref: "Image" },
     isActivated: { type: Boolean, default: true },
     role: {
       type: String,

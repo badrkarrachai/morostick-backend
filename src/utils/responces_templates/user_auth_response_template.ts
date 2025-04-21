@@ -9,18 +9,20 @@ import { formatImageData } from "./image_response_template";
  * @param messagesForUser - Optional messages to include in the response.
  * @returns The formatted user data object.
  */
-export async function formatUserData(
-  user: IUser,
-  messagesForUser: string[] = []
-): Promise<Record<string, any>> {
+export async function formatUserData(user: IUser, messagesForUser: string[] = []): Promise<Record<string, any>> {
   await user.populate("avatar");
+  await user.populate("coverImage");
+  const userCoverImage = user.coverImage ? formatImageData(user.coverImage) : null;
   const userAvatar = user.avatar ? formatImageData(user.avatar) : null;
   return {
     id: user.id,
     name: user.name,
     email: user.email,
+    emailVerified: user.emailVerified,
+    passwordLastChanged: user.passwordLastChanged,
     role: user.role,
     avatar: userAvatar,
+    coverImage: userCoverImage,
     isActivated: user.isActivated,
     preferences: user.preferences,
     notificationSettings: user.notificationSettings,

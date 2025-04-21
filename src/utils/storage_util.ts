@@ -11,10 +11,7 @@ import fs from "fs/promises";
 import os from "os";
 import { AllowedFileFormat, mimeTypeToFormat } from "../types/storage.types";
 import config from "../config";
-import {
-  AVATAR_REQUIREMENTS,
-  PLATFORM_CONFIGS,
-} from "../config/app_requirement";
+import { AVATAR_REQUIREMENTS, COVER_REQUIREMENTS, PLATFORM_CONFIGS } from "../config/app_requirement";
 
 // Initialize S3 client for Cloudflare R2
 const s3Client = new S3Client({
@@ -95,10 +92,7 @@ async function processStaticImage(
 }
 
 // Alternative implementation with progressive quality reduction
-async function processStaticImageProgressive(
-  buffer: Buffer,
-  platform: "whatsapp"
-): Promise<ProcessedImage> {
+async function processStaticImageProgressive(buffer: Buffer, platform: "whatsapp"): Promise<ProcessedImage> {
   const config = PLATFORM_CONFIGS[platform].static;
   let quality = config.quality;
   let processed: Buffer;
@@ -133,11 +127,7 @@ async function processStaticImageProgressive(
 }
 
 // Add a utility function for size optimization
-async function optimizeWebP(
-  buffer: Buffer,
-  maxSize: number,
-  initialQuality: number = 85
-): Promise<ProcessedImage> {
+async function optimizeWebP(buffer: Buffer, maxSize: number, initialQuality: number = 85): Promise<ProcessedImage> {
   let quality = initialQuality;
   const minQuality = 40;
   const qualityStep = 5;
@@ -167,30 +157,21 @@ async function optimizeWebP(
   throw new Error(`Could not optimize image to below ${maxSize} bytes`);
 }
 
-export const uploadToStorage = async (
-  file: Express.Multer.File,
-  folder: string
-): Promise<UploadResult> => {
+export const uploadToStorage = async (file: Express.Multer.File, folder: string): Promise<UploadResult> => {
   try {
     const metadata = await sharp(file.buffer).metadata();
-    const isAnimated =
-      file.mimetype.includes("gif") || metadata.pages !== undefined;
+    const isAnimated = file.mimetype.includes("gif") || metadata.pages !== undefined;
     let processedImage: ProcessedImage;
 
     try {
       if (isAnimated) {
         processedImage = await processAnimatedSticker(file.buffer, "whatsapp");
       } else {
-        processedImage = await processStaticImageProgressive(
-          file.buffer,
-          "whatsapp"
-        );
+        processedImage = await processStaticImageProgressive(file.buffer, "whatsapp");
       }
     } catch (error) {
       if (error.message.includes("size requirements")) {
-        const maxSize = isAnimated
-          ? PLATFORM_CONFIGS.whatsapp.animated.maxSize
-          : PLATFORM_CONFIGS.whatsapp.static.maxSize;
+        const maxSize = isAnimated ? PLATFORM_CONFIGS.whatsapp.animated.maxSize : PLATFORM_CONFIGS.whatsapp.static.maxSize;
         processedImage = await optimizeWebP(file.buffer, maxSize);
       } else {
         throw error;
@@ -231,10 +212,7 @@ export const uploadToStorage = async (
 };
 
 // Modify processAnimatedSticker to better handle animated stickers
-async function processAnimatedSticker(
-  buffer: Buffer,
-  platform: "whatsapp"
-): Promise<ProcessedImage> {
+async function processAnimatedSticker(buffer: Buffer, platform: "whatsapp"): Promise<ProcessedImage> {
   const config = PLATFORM_CONFIGS[platform].animated;
   const tempDir = await fs.mkdtemp(`${os.tmpdir()}/sticker-`);
   const inputPath = `${tempDir}/input.gif`;
@@ -291,10 +269,7 @@ async function processAnimatedSticker(
 }
 
 // Add a function to process static images with proper error handling
-async function processStaticImageWithFallback(
-  buffer: Buffer,
-  platform: "whatsapp"
-): Promise<ProcessedImage> {
+async function processStaticImageWithFallback(buffer: Buffer, platform: "whatsapp"): Promise<ProcessedImage> {
   try {
     // Try progressive processing first
     return await processStaticImageProgressive(buffer, platform);
@@ -304,11 +279,7 @@ async function processStaticImageWithFallback(
 
     // If standard processing produces a file that's too large, try optimization
     if (result.buffer.length > PLATFORM_CONFIGS[platform].static.maxSize) {
-      return await optimizeWebP(
-        buffer,
-        PLATFORM_CONFIGS[platform].static.maxSize,
-        60
-      );
+      return await optimizeWebP(buffer, PLATFORM_CONFIGS[platform].static.maxSize, 60);
     }
 
     return result;
@@ -410,10 +381,7 @@ interface AvatarUploadResult {
   fileSize: number;
 }
 
-export const uploadAvatar = async (
-  file: Express.Multer.File,
-  userId: string
-): Promise<AvatarUploadResult> => {
+export const uploadAvatar = async (file: Express.Multer.File, userId: string): Promise<AvatarUploadResult> => {
   try {
     // Validate file type
     if (!file.mimetype.startsWith("image/")) {
@@ -459,10 +427,7 @@ export const uploadAvatar = async (
 };
 
 // Optional: Add a function to delete old avatars when updating
-export const deleteOldAvatar = async (
-  userId: string,
-  oldAvatarUrl: string
-): Promise<boolean> => {
+export const deleteOldAvatar = async (userId: string, oldAvatarUrl: string): Promise<boolean> => {
   if (!oldAvatarUrl) return true;
 
   try {
@@ -488,3 +453,152 @@ export const deleteOldAvatar = async (
     return false;
   }
 };
+
+export const uploadCoverImage = async (file: Express.Multer.File, userId: string): Promise<CoverImageUploadResult> => {
+  try {
+    // Validate file type
+    if (!file.mimetype.startsWith("image/")) {
+      throw new Error("Invalid file type. Only images are allowed.");
+    }
+
+    // Process the cover image
+    const processedCover = await processCoverImage(file.buffer);
+
+    // Generate unique filename
+    const filename = `covers/${userId}/${uuidv4()}.${processedCover.format}`;
+
+    // Upload to R2
+    const upload = new Upload({
+      client: s3Client,
+      params: {
+        Bucket: BUCKET_NAME,
+        Key: filename,
+        Body: processedCover.buffer,
+        ContentType: `image/${processedCover.format}`,
+        ACL: "public-read",
+        Metadata: {
+          "original-filename": file.originalname,
+          "user-id": userId,
+        },
+      },
+    });
+
+    const result = await upload.done();
+
+    return {
+      success: true,
+      url: `${config.cloudflare.r2.publicUrl}/${result.Key}`,
+      width: processedCover.width,
+      height: processedCover.height,
+      format: processedCover.format,
+      fileSize: processedCover.fileSize,
+    };
+  } catch (error) {
+    console.error("Cover image upload error:", error);
+    throw new Error(`Failed to upload cover image: ${error.message}`);
+  }
+};
+
+interface CoverImageUploadResult {
+  success: boolean;
+  url: string;
+  width: number;
+  height: number;
+  format: string;
+  fileSize: number;
+}
+
+// Function to delete old cover images when updating
+export const deleteOldCoverImage = async (userId: string, oldCoverImageUrl: string): Promise<boolean> => {
+  if (!oldCoverImageUrl) return true;
+
+  try {
+    // Extract key from URL
+    const key = oldCoverImageUrl.replace(`${config.cloudflare.r2.publicUrl}/`, "");
+
+    // Ensure the key is within the correct directory
+    if (!key.startsWith(`covers/${userId}/`)) {
+      console.warn("Attempted to delete cover image from incorrect directory:", key);
+      return false;
+    }
+
+    await s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: key,
+      })
+    );
+
+    return true;
+  } catch (error) {
+    console.error("Cover image deletion error:", error);
+    return false;
+  }
+};
+
+// Function to process cover image (resize, optimize, etc.)
+export async function processCoverImage(buffer: Buffer): Promise<ProcessedCoverImage> {
+  try {
+    // First, resize to standard dimensions
+    const resizedImage = await sharp(buffer)
+      .resize(COVER_REQUIREMENTS.maxWidth, COVER_REQUIREMENTS.maxHeight, {
+        fit: "cover", // Crop to maintain aspect ratio
+        position: "center", // Center the crop
+      })
+      .toBuffer();
+
+    // Then process the resized image with compression
+    const processed = await sharp(resizedImage)
+      .jpeg({
+        quality: 85,
+        force: true,
+      })
+      .toBuffer();
+
+    // If size still exceeds max, try with lower quality
+    if (processed.length > COVER_REQUIREMENTS.maxSize) {
+      const reducedQuality = await sharp(resizedImage)
+        .jpeg({
+          quality: 70,
+          force: true,
+        })
+        .toBuffer();
+
+      if (reducedQuality.length > COVER_REQUIREMENTS.maxSize) {
+        throw new Error("Cover image too large even after compression");
+      }
+
+      const metadata = await sharp(reducedQuality).metadata();
+
+      return {
+        buffer: reducedQuality,
+        width: metadata.width || COVER_REQUIREMENTS.maxWidth,
+        height: metadata.height || COVER_REQUIREMENTS.maxHeight,
+        format: COVER_REQUIREMENTS.format,
+        fileSize: reducedQuality.length,
+      };
+    }
+
+    const metadata = await sharp(processed).metadata();
+
+    return {
+      buffer: processed,
+      width: metadata.width || COVER_REQUIREMENTS.maxWidth,
+      height: metadata.height || COVER_REQUIREMENTS.maxHeight,
+      format: COVER_REQUIREMENTS.format,
+      fileSize: processed.length,
+    };
+  } catch (error) {
+    console.error("Cover image processing error:", error);
+    throw new Error(`Failed to process cover image: ${error.message}`);
+  }
+}
+
+// Define the return type to match the function
+interface ProcessedCoverImage {
+  buffer: Buffer;
+  width: number;
+  height: number;
+  format: string;
+  fileSize: number;
+}
