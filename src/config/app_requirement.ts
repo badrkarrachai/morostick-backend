@@ -38,9 +38,16 @@ export const PLATFORM_CONFIGS = {
       width: 512,
       height: 512,
       format: "webp",
-      fps: 20,
-      maxDuration: 3, // seconds
+      fps: 25, // Max FPS (8ms minimum frame duration)
+      maxDuration: 10, // seconds (official WhatsApp limit)
+      minFrameDuration: 8, // milliseconds
       maxStickers: 30, // Maximum stickers per pack
+    },
+    trayIcon: {
+      width: 96,
+      height: 96,
+      format: "png",
+      maxSize: 50 * 1024, // 50KB max file size
     },
   },
 } as const;
@@ -103,9 +110,17 @@ export interface PlatformConfigAnimated {
   maxStickers: number;
 }
 
+export interface TrayIconConfig {
+  width: number;
+  height: number;
+  format: string;
+  maxSize: number;
+}
+
 export interface PlatformConfig {
   static: PlatformConfigStatic;
   animated: PlatformConfigAnimated;
+  trayIcon: TrayIconConfig;
 }
 
 export type SupportedPlatforms = keyof typeof PLATFORM_CONFIGS;

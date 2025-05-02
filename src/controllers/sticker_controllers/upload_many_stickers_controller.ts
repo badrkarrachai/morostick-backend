@@ -171,7 +171,8 @@ export const bulkUploadStickers = [
           }
 
           // Upload sticker
-          const uploadResult = await uploadToStorage(file, `stickers/${packId}`);
+          const needsTrayIcon = !pack.trayIcon && i === 0;
+          const uploadResult = await uploadToStorage(file, `stickers/${packId}`, needsTrayIcon);
           if (!uploadResult.success) {
             errors.push({
               file: file.originalname,
@@ -204,7 +205,8 @@ export const bulkUploadStickers = [
 
           // Update pack's tray icon if not set and this is the first sticker
           if (!pack.trayIcon && i === 0) {
-            pack.trayIcon = uploadResult.url;
+            // Use the WhatsApp-optimized tray icon if available, otherwise fall back to the sticker URL
+            pack.trayIcon = uploadResult.trayIconUrl || uploadResult.url;
             await pack.save();
           }
         } catch (error) {
