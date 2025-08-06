@@ -1,26 +1,15 @@
 {
   "version": 2,
-  "builds": [
+  "rewrites": [
     {
-      "src": "src/index.ts",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": ["src/**/*", "python/**/*", "src/assets/email_templates/*"]
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "src/index.ts"
+      "source": "/(.*)",
+      "destination": "/api"
     }
   ],
   "functions": {
-    "src/index.ts": {
-      "maxDuration": 30
+    "api/index.ts": {
+      "maxDuration": 30,
+      "includeFiles": ["src/**/*", "python/**/*", "src/assets/email_templates/*"]
     }
-  },
-  "env": {
-    "NODE_ENV": "production"
   }
 }
