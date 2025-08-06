@@ -1,31 +1,17 @@
 import { Request, Response } from "express";
-import { Types, PipelineStage } from "mongoose";
-import { StickerPack } from "../../../models/pack_model";
-import User from "../../../models/users_model";
-import {
-  sendSuccessResponse,
-  sendErrorResponse,
-} from "../../../utils/response_handler_util";
+import { sendSuccessResponse, sendErrorResponse } from "../../../utils/response_handler_util";
 import { validateRequest } from "../../../utils/validations_util";
 import { query } from "express-validator";
-import { PACK_REQUIREMENTS } from "../../../config/app_requirement";
-import { Category } from "../../../models/category_model";
-import { ICategory } from "../../../interfaces/category_interface";
 import { CategoryView, PackView } from "../../../interfaces/views_interface";
-import {
-  transformCategories,
-  transformPacks,
-} from "../../../utils/responces_templates/response_views_transformer";
+import { getCategoriesByNames } from "./get_top_categories";
+import { getTrendingPacks } from "./get_trending_packs";
+import { StickerPack } from "../../../models/pack_model";
+import { extractToken } from "../../../routes/middlewares/auth_middleware";
+import { verifyAccessToken } from "../../../utils/jwt_util";
 
 export const getTrendingValidationRules = [
-  query("page")
-    .optional()
-    .isInt({ min: 1 })
-    .withMessage("Page must be greater than 0"),
-  query("limit")
-    .optional()
-    .isInt({ min: 1, max: 50 })
-    .withMessage("Limit must be between 1 and 50"),
+  query("page").optional().isInt({ min: 1 }).withMessage("Page must be greater than 0"),
+  query("limit").optional().isInt({ min: 1, max: 50 }).withMessage("Limit must be between 1 and 50"),
   query("categoryId").optional().isMongoId().withMessage("Invalid category ID"),
 ];
 
@@ -44,120 +30,19 @@ interface TrendingResponse {
   };
 }
 
-const getTopCategories = async (): Promise<CategoryView[]> => {
-  const categories = await Category.find({ isActive: true })
-    .sort({ order: 1, "stats.totalDownloads": -1 })
-    .limit(10);
-  const transformedCategories = await transformCategories(categories);
-  return transformedCategories;
-};
-
-const getTrendingPacks = async (
-  page: number,
-  limit: number,
-  categoryId?: string,
-  userId?: string
-): Promise<{ packs: PackView[]; total: number }> => {
-  const skip = (page - 1) * limit;
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  // Get user favorites if logged in
-  const userFavorites = userId
-    ? await User.findById(userId)
-        .select("favoritesPacks")
-        .then((u) => u?.favoritesPacks || [])
-    : [];
-
-  const pipeline: PipelineStage[] = [
-    {
-      $match: {
-        isPrivate: false,
-        isAuthorized: true,
-        createdAt: { $gte: thirtyDaysAgo },
-        ...(categoryId && {
-          categories: new Types.ObjectId(categoryId),
-        }),
-        ...(userId && {
-          _id: { $nin: userFavorites },
-        }),
-      },
-    },
-    {
-      $addFields: {
-        trendingScore: {
-          $add: [
-            { $multiply: [{ $ifNull: ["$stats.downloads", 0] }, 10] },
-            { $multiply: [{ $ifNull: ["$stats.views", 0] }, 5] },
-            { $multiply: [{ $ifNull: ["$stats.favorites", 0] }, 8] },
-            {
-              $multiply: [
-                {
-                  $divide: [
-                    1,
-                    {
-                      $add: [
-                        {
-                          $divide: [
-                            { $subtract: [new Date(), "$createdAt"] },
-                            86400000,
-                          ],
-                        },
-                        1,
-                      ],
-                    },
-                  ],
-                },
-                100,
-              ],
-            },
-          ],
-        },
-      },
-    },
-    { $sort: { trendingScore: -1 } },
-    { $skip: skip },
-    { $limit: limit },
-  ];
-
-  const [packs, totalCount] = await Promise.all([
-    StickerPack.aggregate(pipeline),
-    StickerPack.countDocuments({
-      isPrivate: false,
-      isAuthorized: true,
-      createdAt: { $gte: thirtyDaysAgo },
-      ...(categoryId && {
-        categories: new Types.ObjectId(categoryId),
-      }),
-      ...(userId && {
-        _id: { $nin: userFavorites },
-      }),
-    }),
-  ]);
-
-  const transformedPacks = await transformPacks(packs);
-  return {
-    packs: transformedPacks,
-    total: totalCount,
-  };
-};
+//!!! Before changing this, make sure it's same as the one in category_tabs_controller
+const categories = ["Meme", "Cat", "Love", "Dog", "Baby", "Reaction", "Cute", "Anime", "Crypto", "Emoji"];
 
 export const getTrending = async (req: Request, res: Response) => {
   try {
-    const validationErrors = await validateRequest(
-      req,
-      res,
-      getTrendingValidationRules
-    );
+    const validationErrors = await validateRequest(req, res, getTrendingValidationRules);
 
     if (validationErrors !== "validation successful") {
       return sendErrorResponse({
         res,
         message: "Invalid parameters",
         errorCode: "INVALID_PARAMETERS",
-        errorFields: Array.isArray(validationErrors)
-          ? validationErrors
-          : undefined,
+        errorFields: Array.isArray(validationErrors) ? validationErrors : undefined,
         errorDetails: validationErrors,
         status: 400,
       });
@@ -166,12 +51,29 @@ export const getTrending = async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const categoryId = req.query.categoryId as string;
-    const userId = req.user?.id;
+    let userId;
+    try {
+      if (req.header("Authorization") !== undefined) {
+        const token = extractToken(req.header("Authorization"));
+        // Verify access token
+        const decoded = await verifyAccessToken(token);
+        userId = (req.user = decoded.user).id;
+      }
+    } catch (error) {}
 
-    const [topCategories, trendingPacks] = await Promise.all([
-      getTopCategories(),
-      getTrendingPacks(page, limit, categoryId, userId),
-    ]);
+    const [topCategories, trendingPacks] = await Promise.all([getCategoriesByNames(categories), getTrendingPacks(page, limit, categoryId, userId)]);
+
+    // Record views in background without waiting
+    if (trendingPacks.packs.length > 0) {
+      StickerPack.recordBatchViews(
+        trendingPacks.packs.map((pack) => pack.id),
+        {
+          userId: req.user?.id,
+        }
+      ).catch((error) => {
+        console.error("Failed to record pack views:", error);
+      });
+    }
 
     const totalPages = Math.ceil(trendingPacks.total / limit);
 
@@ -201,8 +103,7 @@ export const getTrending = async (req: Request, res: Response) => {
       res,
       message: "Server error",
       errorCode: "SERVER_ERROR",
-      errorDetails:
-        error instanceof Error ? error.message : "An unexpected error occurred",
+      errorDetails: error instanceof Error ? error.message : "An unexpected error occurred",
       status: 500,
     });
   }

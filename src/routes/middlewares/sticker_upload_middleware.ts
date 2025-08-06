@@ -2,10 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import multer from "multer";
 import sharp from "sharp";
 import { sendErrorResponse } from "../../utils/response_handler_util";
-import {
-  STICKER_REQUIREMENTS,
-  UPLOAD_USER_AVATAR_REQUIREMENTS,
-} from "../../config/app_requirement";
+import { STICKER_REQUIREMENTS, UPLOAD_COVER_IMAGE_REQUIREMENTS, UPLOAD_USER_AVATAR_REQUIREMENTS } from "../../config/app_requirement";
 
 // Map file extensions to MIME types
 const MIME_TYPES = {
@@ -20,19 +17,17 @@ const MIME_TYPES = {
 const storage = multer.memoryStorage();
 
 // Create multer instances for different upload types
-const createUploader = (type: "sticker" | "avatar") => {
-  const config =
-    type === "sticker" ? STICKER_REQUIREMENTS : UPLOAD_USER_AVATAR_REQUIREMENTS;
+const createUploader = (type: "sticker" | "avatar" | "coverImage") => {
+  const config = type === "sticker" ? STICKER_REQUIREMENTS : type == "coverImage" ? UPLOAD_COVER_IMAGE_REQUIREMENTS : UPLOAD_USER_AVATAR_REQUIREMENTS;
 
   return multer({
     storage,
     limits: {
       fileSize:
         type === "sticker"
-          ? Math.max(
-              STICKER_REQUIREMENTS.maxFileSize,
-              STICKER_REQUIREMENTS.animatedMaxFileSize
-            )
+          ? Math.max(STICKER_REQUIREMENTS.maxFileSize, STICKER_REQUIREMENTS.animatedMaxFileSize)
+          : type === "coverImage"
+          ? UPLOAD_COVER_IMAGE_REQUIREMENTS.maxSize
           : UPLOAD_USER_AVATAR_REQUIREMENTS.maxSize,
     },
     fileFilter: (req, file, cb) => {
@@ -40,13 +35,7 @@ const createUploader = (type: "sticker" | "avatar") => {
       const isValidType = config.allowedFormats.includes(fileType);
 
       if (!isValidType) {
-        cb(
-          new Error(
-            `Invalid file type. Allowed formats: ${config.allowedFormats.join(
-              ", "
-            )}`
-          )
-        );
+        cb(new Error(`Invalid file type. Allowed formats: ${config.allowedFormats.join(", ")}`));
         return;
       }
 
@@ -57,16 +46,15 @@ const createUploader = (type: "sticker" | "avatar") => {
 
 const stickerUpload = createUploader("sticker").single("stickerImage");
 const avatarUpload = createUploader("avatar").single("avatarImage");
+const coverImageUpload = createUploader("coverImage").single("coverImage");
 
 // Helper function to validate dimensions
-function validateDimensions(
-  width: number,
-  height: number,
-  type: "sticker" | "avatar"
-): { isValid: boolean; error?: string } {
+function validateDimensions(width: number, height: number, type: "sticker" | "avatar" | "coverImage"): { isValid: boolean; error?: string } {
   const config =
     type === "sticker"
       ? STICKER_REQUIREMENTS.dimensions
+      : type === "coverImage"
+      ? UPLOAD_COVER_IMAGE_REQUIREMENTS.dimensions
       : UPLOAD_USER_AVATAR_REQUIREMENTS.dimensions;
 
   if (width < config.minWidth || height < config.minHeight) {
@@ -87,19 +75,13 @@ function validateDimensions(
 }
 
 // Generic file processing middleware
-async function processUploadedFile(
-  req: Request,
-  res: Response,
-  type: "sticker" | "avatar"
-) {
+async function processUploadedFile(req: Request, res: Response, type: "sticker" | "avatar" | "coverImage") {
   if (!req.file) {
     return sendErrorResponse({
       res,
       message: "No file uploaded",
       errorCode: "FILE_REQUIRED",
-      errorDetails: `Please provide ${
-        type === "sticker" ? "a sticker" : "an avatar"
-      } image file`,
+      errorDetails: `Please provide ${type === "sticker" ? "a sticker" : type === "coverImage" ? "a cover image" : "an avatar"} image file`,
       status: 400,
     });
   }
@@ -107,8 +89,7 @@ async function processUploadedFile(
   try {
     const metadata = await sharp(req.file.buffer).metadata();
 
-    const isAnimated =
-      req.file.mimetype === "image/gif" || metadata.pages !== undefined;
+    const isAnimated = req.file.mimetype === "image/gif" || metadata.pages !== undefined;
 
     // Validate file size
     const maxSize =
@@ -116,6 +97,8 @@ async function processUploadedFile(
         ? isAnimated
           ? STICKER_REQUIREMENTS.animatedMaxFileSize
           : STICKER_REQUIREMENTS.maxFileSize
+        : type === "coverImage"
+        ? UPLOAD_COVER_IMAGE_REQUIREMENTS.maxSize
         : UPLOAD_USER_AVATAR_REQUIREMENTS.maxSize;
 
     if (req.file.size > maxSize) {
@@ -130,11 +113,7 @@ async function processUploadedFile(
 
     // Validate dimensions
     if (metadata.width && metadata.height) {
-      const dimensionsValid = validateDimensions(
-        metadata.width,
-        metadata.height,
-        type
-      );
+      const dimensionsValid = validateDimensions(metadata.width, metadata.height, type);
       if (!dimensionsValid.isValid) {
         return sendErrorResponse({
           res,
@@ -168,11 +147,7 @@ async function processUploadedFile(
 }
 
 // Middleware to handle sticker upload
-export const uploadStickerFile = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const uploadStickerFile = async (req: Request, res: Response, next: NextFunction) => {
   stickerUpload(req, res, async (err) => {
     try {
       if (err instanceof multer.MulterError) {
@@ -180,10 +155,7 @@ export const uploadStickerFile = async (
           res,
           message: "File upload error",
           errorCode: "UPLOAD_ERROR",
-          errorDetails:
-            err.code === "LIMIT_FILE_SIZE"
-              ? "File size exceeds the maximum limit"
-              : err.message,
+          errorDetails: err.code === "LIMIT_FILE_SIZE" ? "File size exceeds the maximum limit" : err.message,
           status: 400,
         });
       } else if (err) {
@@ -206,8 +178,7 @@ export const uploadStickerFile = async (
         res,
         message: "Server error",
         errorCode: "SERVER_ERROR",
-        errorDetails:
-          "An unexpected error occurred while processing the upload",
+        errorDetails: "An unexpected error occurred while processing the upload",
         status: 500,
       });
     }
@@ -215,11 +186,7 @@ export const uploadStickerFile = async (
 };
 
 // Middleware to handle avatar upload
-export const uploadAvatarFile = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const uploadAvatarFile = async (req: Request, res: Response, next: NextFunction) => {
   avatarUpload(req, res, async (err) => {
     try {
       if (err instanceof multer.MulterError) {
@@ -227,10 +194,7 @@ export const uploadAvatarFile = async (
           res,
           message: "File upload error",
           errorCode: "UPLOAD_ERROR",
-          errorDetails:
-            err.code === "LIMIT_FILE_SIZE"
-              ? "File size exceeds the maximum limit"
-              : err.message,
+          errorDetails: err.code === "LIMIT_FILE_SIZE" ? "File size exceeds the maximum limit" : err.message,
           status: 400,
         });
       } else if (err) {
@@ -253,8 +217,45 @@ export const uploadAvatarFile = async (
         res,
         message: "Server error",
         errorCode: "SERVER_ERROR",
-        errorDetails:
-          "An unexpected error occurred while processing the upload",
+        errorDetails: "An unexpected error occurred while processing the upload",
+        status: 500,
+      });
+    }
+  });
+};
+
+export const uploadCoverImageFile = async (req: Request, res: Response, next: NextFunction) => {
+  coverImageUpload(req, res, async (err) => {
+    try {
+      if (err instanceof multer.MulterError) {
+        return sendErrorResponse({
+          res,
+          message: "File upload error",
+          errorCode: "UPLOAD_ERROR",
+          errorDetails: err.code === "LIMIT_FILE_SIZE" ? "File size exceeds the maximum limit" : err.message,
+          status: 400,
+        });
+      } else if (err) {
+        return sendErrorResponse({
+          res,
+          message: "Invalid file",
+          errorCode: "INVALID_FILE",
+          errorDetails: err.message,
+          status: 400,
+        });
+      }
+
+      const error = await processUploadedFile(req, res, "coverImage");
+      if (error) return error;
+
+      next();
+    } catch (error) {
+      console.error("Cover image upload middleware error:", error);
+      return sendErrorResponse({
+        res,
+        message: "Server error",
+        errorCode: "SERVER_ERROR",
+        errorDetails: "An unexpected error occurred while processing the cover image upload",
         status: 500,
       });
     }
@@ -270,7 +271,7 @@ declare global {
         width: number;
         height: number;
         format: string;
-        uploadType: "sticker" | "avatar";
+        uploadType: "sticker" | "avatar" | "coverImage";
       };
     }
   }

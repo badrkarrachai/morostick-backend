@@ -1,17 +1,15 @@
 import { Request, Response } from "express";
-import { StickerPack } from "../../../models/pack_model";
-import { Category } from "../../../models/category_model";
+import { StickerPack } from "../../models/pack_model";
+import { Category } from "../../models/category_model";
 import {
   sendSuccessResponse,
   sendErrorResponse,
-} from "../../../utils/response_handler_util";
-import { validateRequest } from "../../../utils/validations_util";
+} from "../../utils/response_handler_util";
+import { validateRequest } from "../../utils/validations_util";
 import { body, param } from "express-validator";
-import { PACK_REQUIREMENTS } from "../../../config/app_requirement";
+import { PACK_REQUIREMENTS } from "../../config/app_requirement";
 import { Types } from "mongoose";
-import { processObject } from "../../../utils/process_object";
-import { packKeysToRemove } from "../../../interfaces/pack_interface";
-import { transformPack } from "../../../utils/responces_templates/response_views_transformer";
+import { transformPack } from "../../utils/responces_templates/response_views_transformer";
 
 export const updatePackValidationRules = [
   param("packId").isMongoId().withMessage("Invalid pack ID"),
@@ -114,7 +112,7 @@ export const updatePack = async (req: Request, res: Response) => {
     }
 
     // Check ownership
-    if (!pack.creator.some((creator) => creator._id.toString() === userId)) {
+    if (pack.creator._id.toString() !== userId) {
       return sendErrorResponse({
         res,
         message: "Unauthorized",

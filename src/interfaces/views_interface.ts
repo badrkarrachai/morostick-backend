@@ -2,7 +2,7 @@
 export interface CreatorView {
   id: string;
   name: string;
-  avatarUrl: string;
+  avatarUrl?: string;
 }
 
 export interface CategoryView {
@@ -11,9 +11,11 @@ export interface CategoryView {
   slug: string;
   description?: string;
   emoji?: string[];
+  trayIcon?: string;
   isActive: boolean;
   order: number;
   isGenerated: boolean;
+  tabindex?: number;
   stats: {
     packCount: number;
     stickerCount: number;
@@ -35,6 +37,7 @@ export interface PackView {
   isAuthorized: boolean;
   isAnimatedPack: boolean;
   categories: CategoryView[];
+  totalStickers: number;
   stats: {
     downloads: number;
     views: number;
@@ -53,19 +56,20 @@ export interface StickerView {
   webpUrl: string;
   isAnimated: boolean;
   fileSize: number;
-  creator: CreatorView;
+  creator?: CreatorView;
   dimensions: {
     width: number;
     height: number;
   };
   format: "webp" | "png";
-  categories: CategoryView[];
+  categories?: CategoryView[];
   position: number;
   stats: {
     downloads: number;
     views: number;
     favorites: number;
   };
+  isFavorite: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -26,4 +26,8 @@ export interface ISticker extends Document {
   stats: IStats;
   createdAt: Date;
   updatedAt: Date;
+
+  // Add method signatures
+  incrementStats(field: keyof IStats): Promise<void>;
+  decrementStats(field: keyof IStats): Promise<void>;
 }

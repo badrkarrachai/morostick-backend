@@ -1,0 +1,25 @@
+# Core dependencies
+torch>=1.10.0
+torchvision>=0.11.0
+Pillow>=9.0.0
+numpy>=1.20.0
+requests>=2.26.0
+scikit-image>=0.18.0
+scipy>=1.7.0
+
+# Hugging Face Transformers for RMBG-V1
+transformers>=4.25.0
+huggingface-hub>=0.15.1
+safetensors>=0.3.0
+
+# ONNX Runtime for RMBG-2.0
+onnxruntime>=1.15.0
+# For CUDA support (uncomment if needed)
+# onnxruntime-gpu>=1.15.0
+
+# Optional dependencies for improved performance
+accelerate>=0.17.0
+
+# Uncomment for CUDA support if needed
+# nvidia-cuda-runtime-cu11
+# nvidia-cudnn-cu11 

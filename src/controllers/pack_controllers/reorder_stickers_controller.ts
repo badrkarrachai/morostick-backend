@@ -1,16 +1,14 @@
 import { Request, Response } from "express";
-import { StickerPack } from "../../../models/pack_model";
-import { Sticker } from "../../../models/sticker_model";
+import { StickerPack } from "../../models/pack_model";
+import { Sticker } from "../../models/sticker_model";
 import {
   sendSuccessResponse,
   sendErrorResponse,
-} from "../../../utils/response_handler_util";
-import { validateRequest } from "../../../utils/validations_util";
+} from "../../utils/response_handler_util";
+import { validateRequest } from "../../utils/validations_util";
 import { body, param } from "express-validator";
 import { Types } from "mongoose";
-import { processObject } from "../../../utils/process_object";
-import { packKeysToRemove } from "../../../interfaces/pack_interface";
-import { transformPack } from "../../../utils/responces_templates/response_views_transformer";
+import { transformPack } from "../../utils/responces_templates/response_views_transformer";
 
 export const reorderStickersValidationRules = [
   param("packId").isMongoId().withMessage("Invalid pack ID"),
@@ -192,10 +190,7 @@ export const moveSticker = async (req: Request, res: Response) => {
     }
 
     // Find pack with stickers
-    const pack = await StickerPack.findById(packId).populate({
-      path: "stickers",
-      select: "_id position",
-    });
+    const pack = await StickerPack.findById(packId);
 
     if (!pack) {
       return sendErrorResponse({
@@ -207,11 +202,8 @@ export const moveSticker = async (req: Request, res: Response) => {
       });
     }
 
-    // Validate user is pack creator
-    const isPackCreator = await StickerPack.exists({
-      _id: packId,
-      creator: userId,
-    });
+    // Validate user is pack creator using pack
+    const isPackCreator = pack.creator.toString() === userId;
 
     if (!isPackCreator) {
       return sendErrorResponse({
@@ -276,10 +268,7 @@ export const moveSticker = async (req: Request, res: Response) => {
     sticker.position = newPosition;
     await sticker.save();
 
-    // Return updated pack
-    const updatedPack = await StickerPack.findById(packId);
-
-    const packView = await transformPack(updatedPack);
+    const packView = await transformPack(pack);
 
     return sendSuccessResponse({
       res,

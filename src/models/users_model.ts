@@ -8,7 +8,9 @@ const userSchema = new Schema<IUser>(
     email: { type: String, required: true, unique: true },
     emailVerified: { type: Boolean, default: false },
     password: { type: String, required: true },
+    passwordLastChanged: { type: Date, default: Date.now },
     avatar: { type: Schema.Types.ObjectId, ref: "Image" },
+    coverImage: { type: Schema.Types.ObjectId, ref: "Image" },
     isActivated: { type: Boolean, default: true },
     role: {
       type: String,
@@ -32,6 +34,8 @@ const userSchema = new Schema<IUser>(
       currency: { type: String, default: "USD" },
       language: { type: String, default: "en" },
       theme: { type: String, enum: ["light", "dark"], default: "light" },
+      isGoogleAuthEnabled: { type: Boolean, default: false },
+      isFacebookAuthEnabled: { type: Boolean, default: false },
     },
     socialMedia: {
       facebook: { type: String },
@@ -60,6 +64,7 @@ const userSchema = new Schema<IUser>(
     packs: [{ type: Types.ObjectId, ref: "Pack" }],
     favoritesPacks: [{ type: Types.ObjectId, ref: "Pack" }],
     favoritesStickers: [{ type: Types.ObjectId, ref: "Sticker" }],
+    hiddenPacks: [{ type: Types.ObjectId, ref: "Pack" }],
   },
   {
     timestamps: true,

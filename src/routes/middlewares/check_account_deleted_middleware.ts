@@ -3,11 +3,7 @@ import { Request, Response } from "express";
 import User from "../../models/users_model";
 import { sendErrorResponse } from "../../utils/response_handler_util";
 
-export const checkAccountNotDeleted = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const checkAccountNotDeleted = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user?.id;
     const user = await User.findById(userId);
@@ -27,8 +23,7 @@ export const checkAccountNotDeleted = async (
         res,
         message: "Account has been deleted",
         errorCode: "ACCOUNT_DELETED",
-        errorDetails:
-          "Your account has been deleted. Please contact the administrator for further assistance.",
+        errorDetails: "Your account has been deleted. You can undo this action in your account settings.",
         status: 403,
       });
     }
@@ -40,8 +35,7 @@ export const checkAccountNotDeleted = async (
       res,
       message: "An error occurred",
       errorCode: "SERVER_ERROR",
-      errorDetails:
-        "An unexpected error occurred while checking account deletion.",
+      errorDetails: "An unexpected error occurred while checking account deletion.",
       status: 500,
     });
   }

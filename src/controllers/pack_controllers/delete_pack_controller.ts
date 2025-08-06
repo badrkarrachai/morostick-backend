@@ -1,24 +1,17 @@
 import { Request, Response } from "express";
-import { StickerPack } from "../../../models/pack_model";
-import { Sticker } from "../../../models/sticker_model"; // Assuming you have a Sticker model
-import {
-  sendSuccessResponse,
-  sendErrorResponse,
-} from "../../../utils/response_handler_util";
-import { validateRequest } from "../../../utils/validations_util";
-import { param } from "express-validator";
-import { deleteFromStorage } from "../../../utils/storage_util";
-import User from "../../../models/users_model";
+import { StickerPack } from "../../models/pack_model";
+import { Sticker } from "../../models/sticker_model"; // Assuming you have a Sticker model
+import { sendSuccessResponse, sendErrorResponse } from "../../utils/response_handler_util";
+import { validateRequest } from "../../utils/validations_util";
+import { param, query } from "express-validator";
+import { deleteFromStorage } from "../../utils/storage_util";
+import User from "../../models/users_model";
 
 // Helper function for deleting sticker files
 async function deleteStickerFiles(sticker: any) {
   try {
     // Delete all associated files
-    const deletePromises = [
-      deleteFromStorage(sticker.imageUrl),
-      deleteFromStorage(sticker.thumbnailUrl),
-      deleteFromStorage(sticker.webpUrl),
-    ];
+    const deletePromises = [deleteFromStorage(sticker.imageUrl), deleteFromStorage(sticker.thumbnailUrl), deleteFromStorage(sticker.webpUrl)];
 
     await Promise.all(deletePromises);
     return true;
@@ -30,26 +23,18 @@ async function deleteStickerFiles(sticker: any) {
 
 export const deletePack = async (req: Request, res: Response) => {
   const userId = req.user.id;
-  const { packId } = req.params;
+  const { packId } = req.query;
 
   try {
     // Validate request
-    const validationErrors = await validateRequest(
-      req,
-      res,
-      deletePackValidationRules
-    );
+    const validationErrors = await validateRequest(req, res, deletePackValidationRules);
     if (validationErrors !== "validation successful") {
       return sendErrorResponse({
         res,
         message: "Invalid input",
         errorCode: "INVALID_INPUT",
-        errorFields: Array.isArray(validationErrors)
-          ? validationErrors
-          : undefined,
-        errorDetails: Array.isArray(validationErrors)
-          ? validationErrors.join(", ")
-          : validationErrors,
+        errorFields: Array.isArray(validationErrors) ? validationErrors : undefined,
+        errorDetails: Array.isArray(validationErrors) ? validationErrors.join(", ") : validationErrors,
         status: 400,
       });
     }
@@ -91,14 +76,9 @@ export const deletePack = async (req: Request, res: Response) => {
     );
 
     // Check for any failures in sticker deletion
-    const failedDeletions = deletionResults.filter(
-      (result) => result.status === "rejected"
-    );
+    const failedDeletions = deletionResults.filter((result) => result.status === "rejected");
     if (failedDeletions.length > 0) {
-      console.error(
-        `Failed to delete ${failedDeletions.length} stickers for pack ${packId}`,
-        failedDeletions
-      );
+      console.error(`Failed to delete ${failedDeletions.length} stickers for pack ${packId}`, failedDeletions);
     }
 
     // Delete the pack
@@ -115,8 +95,7 @@ export const deletePack = async (req: Request, res: Response) => {
     if (failedDeletions.length > 0) {
       return sendSuccessResponse({
         res,
-        message:
-          "Pack deleted successfully, but some sticker files may need cleanup",
+        message: "Pack deleted successfully",
         status: 200,
       });
     }
@@ -133,14 +112,11 @@ export const deletePack = async (req: Request, res: Response) => {
       res,
       message: "Server error",
       errorCode: "SERVER_ERROR",
-      errorDetails:
-        "An unexpected error occurred while deleting the pack and its stickers.",
+      errorDetails: "An unexpected error occurred while deleting the pack and its stickers.",
       status: 500,
     });
   }
 };
 
 // Validation rules
-export const deletePackValidationRules = [
-  param("packId").isMongoId().withMessage("Invalid pack ID"),
-];
+export const deletePackValidationRules = [query("packId").optional().isMongoId().withMessage("Invalid pack ID format")];
