@@ -7,7 +7,9 @@ export interface IUser extends Document {
   email: string;
   emailVerified: boolean;
   password: string;
+  passwordLastChanged: Date;
   avatar?: Types.ObjectId | IImages;
+  coverImage?: Types.ObjectId | IImages;
   isActivated: boolean;
   role: string;
   lastLogin?: Date;
@@ -37,6 +39,8 @@ export interface IUser extends Document {
     currency: string;
     language: string;
     theme: string;
+    isGoogleAuthEnabled: boolean;
+    isFacebookAuthEnabled: boolean;
   };
 
   // Social Media Links
@@ -67,6 +71,7 @@ export interface IUser extends Document {
   packs: Types.ObjectId[];
   favoritesPacks: Types.ObjectId[];
   favoritesStickers: Types.ObjectId[];
+  hiddenPacks: Types.ObjectId[];
 
   // Timestamps
   createdAt: Date;

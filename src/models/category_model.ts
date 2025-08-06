@@ -1,17 +1,21 @@
 import mongoose, { Schema, Model, Types } from "mongoose";
 import { ICategory } from "../interfaces/category_interface";
 
+// utility function for name formatting
+const formatCategoryName = (name: string): string => {
+  // Convert the name to lowercase first
+  const lowercased = name.toLowerCase().trim();
+  // Capitalize the first letter
+  return lowercased.charAt(0).toUpperCase() + lowercased.slice(1);
+};
+
 // Define interface for static methods
 interface ICategoryModel extends Model<ICategory> {
   findOrCreate(name: string, isGenerated?: boolean): Promise<ICategory>;
   reorderCategory(categoryId: string, newOrder: number): Promise<void>;
   normalizeOrders(): Promise<void>;
   findPopular(limit?: number): Promise<ICategory[]>;
-  assignCategories(options: {
-    categoryIds?: string[];
-    categoryNames?: string[];
-    fallbackName?: string;
-  }): Promise<Types.ObjectId[]>;
+  assignCategories(options: { categoryIds?: string[]; categoryNames?: string[]; fallbackName?: string }): Promise<Types.ObjectId[]>;
 }
 
 const CategoryStatsSchema = new Schema(
@@ -36,6 +40,10 @@ const CategoryStatsSchema = new Schema(
       default: 0,
       min: 0,
     },
+    totalSearches: {
+      type: Number,
+      default: 0,
+    },
   },
   { _id: false }
 );
@@ -48,6 +56,7 @@ const CategorySchema = new Schema<ICategory, ICategoryModel>(
       unique: true,
       trim: true,
       maxlength: 50,
+      set: formatCategoryName,
     },
     slug: {
       type: String,
@@ -67,13 +76,14 @@ const CategorySchema = new Schema<ICategory, ICategoryModel>(
       default: [],
       validate: {
         validator: function (emojis: string[]) {
-          return (
-            Array.isArray(emojis) &&
-            emojis.every((emoji) => /\p{Emoji}/u.test(emoji))
-          );
+          return Array.isArray(emojis) && emojis.every((emoji) => /\p{Emoji}/u.test(emoji));
         },
         message: "Invalid emoji format",
       },
+    },
+    trayIcon: {
+      type: String,
+      trim: true,
     },
     isActive: {
       type: Boolean,
@@ -134,11 +144,7 @@ CategorySchema.methods.incrementStats = async function (stats: {
 
 CategorySchema.static(
   "assignCategories",
-  async function (options: {
-    categoryIds?: string[];
-    categoryNames?: string[];
-    fallbackName?: string;
-  }): Promise<Types.ObjectId[]> {
+  async function (options: { categoryIds?: string[]; categoryNames?: string[]; fallbackName?: string }): Promise<Types.ObjectId[]> {
     const { categoryIds = [], categoryNames = [], fallbackName } = options;
     let resultCategories: Types.ObjectId[] = [];
 
@@ -157,23 +163,17 @@ CategorySchema.static(
 
       // Priority 2: Handle category names if provided
       if (categoryNames.length > 0 && resultCategories.length === 0) {
-        const categoryPromises = categoryNames.map((name) =>
-          this.findOrCreate(name.trim(), false)
-        );
+        const categoryPromises = categoryNames.map((name) => this.findOrCreate(name.trim(), false));
         const createdCategories = await Promise.all(categoryPromises);
         resultCategories = createdCategories.map((cat) => cat.id);
       }
 
       // Priority 3: Use fallback name if no categories were found/created
       if (resultCategories.length === 0 && fallbackName) {
-        const fallbackCategory = await this.findOrCreate(
-          fallbackName.trim(),
-          true
-        );
+        const fallbackCategory = await this.findOrCreate(fallbackName.trim(), true);
         resultCategories = [fallbackCategory.id];
       }
 
-      // Validate final result
       if (resultCategories.length === 0) {
         throw new Error("No valid categories could be assigned");
       }
@@ -210,61 +210,48 @@ CategorySchema.pre("save", function (next) {
 });
 
 // Static methods
-CategorySchema.static(
-  "findOrCreate",
-  async function (name: string, isGenerated = false): Promise<ICategory> {
-    const slug = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "");
+CategorySchema.static("findOrCreate", async function (name: string, isGenerated = false): Promise<ICategory> {
+  const formattedName = formatCategoryName(name);
+  const slug = formattedName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 
-    let category = await this.findOne({ slug });
+  let category = await this.findOne({ slug });
 
-    if (!category) {
-      const lastCategory = await this.findOne({})
-        .sort({ order: -1 })
-        .select("order");
+  if (!category) {
+    const lastCategory = await this.findOne({}).sort({ order: -1 }).select("order");
 
-      const order = (lastCategory?.order ?? -1) + 1;
+    const order = (lastCategory?.order ?? -1) + 1;
 
-      category = await this.create({
-        name,
-        slug,
-        order,
-        isGenerated,
-      });
-    }
-
-    return category;
+    category = await this.create({
+      name: formattedName, // Use formatted name
+      slug,
+      order,
+      isGenerated,
+    });
   }
-);
 
-CategorySchema.static(
-  "reorderCategory",
-  async function (categoryId: string, newOrder: number): Promise<void> {
-    const category = await this.findById(categoryId);
-    if (!category) {
-      throw new Error("Category not found");
-    }
+  return category;
+});
 
-    const oldOrder = category.order;
-
-    if (newOrder > oldOrder) {
-      await this.updateMany(
-        { order: { $gt: oldOrder, $lte: newOrder } },
-        { $inc: { order: -1 } }
-      );
-    } else if (newOrder < oldOrder) {
-      await this.updateMany(
-        { order: { $gte: newOrder, $lt: oldOrder } },
-        { $inc: { order: 1 } }
-      );
-    }
-
-    category.order = newOrder;
-    await category.save();
+CategorySchema.static("reorderCategory", async function (categoryId: string, newOrder: number): Promise<void> {
+  const category = await this.findById(categoryId);
+  if (!category) {
+    throw new Error("Category not found");
   }
-);
+
+  const oldOrder = category.order;
+
+  if (newOrder > oldOrder) {
+    await this.updateMany({ order: { $gt: oldOrder, $lte: newOrder } }, { $inc: { order: -1 } });
+  } else if (newOrder < oldOrder) {
+    await this.updateMany({ order: { $gte: newOrder, $lt: oldOrder } }, { $inc: { order: 1 } });
+  }
+
+  category.order = newOrder;
+  await category.save();
+});
 
 CategorySchema.static("normalizeOrders", async function (): Promise<void> {
   const categories = await this.find({}).sort({ order: 1 }).select("_id");
@@ -274,15 +261,8 @@ CategorySchema.static("normalizeOrders", async function (): Promise<void> {
   }
 });
 
-CategorySchema.static("findPopular", async function (limit = 10): Promise<
-  ICategory[]
-> {
-  return this.find({ isActive: true })
-    .sort({ "stats.packCount": -1 })
-    .limit(limit);
+CategorySchema.static("findPopular", async function (limit = 10): Promise<ICategory[]> {
+  return this.find({ isActive: true }).sort({ "stats.packCount": -1 }).limit(limit);
 });
 
-export const Category = mongoose.model<ICategory, ICategoryModel>(
-  "Category",
-  CategorySchema
-);
+export const Category = mongoose.model<ICategory, ICategoryModel>("Category", CategorySchema);

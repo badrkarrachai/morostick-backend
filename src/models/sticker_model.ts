@@ -17,9 +17,7 @@ const DimensionsSchema = new Schema(
       type: Number,
       required: true,
       validate: {
-        validator: (width: number) =>
-          width >= STICKER_REQUIREMENTS.dimensions.minWidth &&
-          width <= STICKER_REQUIREMENTS.dimensions.maxWidth,
+        validator: (width: number) => width >= STICKER_REQUIREMENTS.dimensions.minWidth && width <= STICKER_REQUIREMENTS.dimensions.maxWidth,
         message: `Width must be between ${STICKER_REQUIREMENTS.dimensions.minWidth} and ${STICKER_REQUIREMENTS.dimensions.maxWidth} pixels`,
       },
     },
@@ -27,9 +25,7 @@ const DimensionsSchema = new Schema(
       type: Number,
       required: true,
       validate: {
-        validator: (height: number) =>
-          height >= STICKER_REQUIREMENTS.dimensions.minHeight &&
-          height <= STICKER_REQUIREMENTS.dimensions.maxHeight,
+        validator: (height: number) => height >= STICKER_REQUIREMENTS.dimensions.minHeight && height <= STICKER_REQUIREMENTS.dimensions.maxHeight,
         message: `Height must be between ${STICKER_REQUIREMENTS.dimensions.minHeight} and ${STICKER_REQUIREMENTS.dimensions.maxHeight} pixels`,
       },
     },
@@ -41,7 +37,7 @@ const StickerSchema = new Schema<ISticker>(
   {
     packId: {
       type: Schema.Types.ObjectId,
-      ref: "StickerPack",
+      ref: "Pack",
       required: true,
       index: true,
     },
@@ -55,8 +51,7 @@ const StickerSchema = new Schema<ISticker>(
       type: [String],
       default: [],
       validate: {
-        validator: (emojis: string[]) =>
-          emojis.length <= STICKER_REQUIREMENTS.maxEmojis,
+        validator: (emojis: string[]) => emojis.length <= STICKER_REQUIREMENTS.maxEmojis,
         message: `Maximum ${STICKER_REQUIREMENTS.maxEmojis} emojis allowed per sticker`,
       },
     },
@@ -80,14 +75,10 @@ const StickerSchema = new Schema<ISticker>(
       required: true,
       validate: {
         validator: function (size: number) {
-          return this.isAnimated
-            ? size <= STICKER_REQUIREMENTS.animatedMaxFileSize
-            : size <= STICKER_REQUIREMENTS.maxFileSize;
+          return this.isAnimated ? size <= STICKER_REQUIREMENTS.animatedMaxFileSize : size <= STICKER_REQUIREMENTS.maxFileSize;
         },
         message: (props: any) => {
-          const maxSize = props.value.isAnimated
-            ? STICKER_REQUIREMENTS.animatedMaxFileSize
-            : STICKER_REQUIREMENTS.maxFileSize;
+          const maxSize = props.value.isAnimated ? STICKER_REQUIREMENTS.animatedMaxFileSize : STICKER_REQUIREMENTS.maxFileSize;
           return `File size exceeds maximum allowed limit of ${maxSize} bytes`;
         },
       },
@@ -153,10 +144,7 @@ StickerSchema.index({ packId: 1, position: 1 });
 StickerSchema.index({ packId: 1, name: 1 }, { unique: true });
 StickerSchema.index({ packId: 1, createdAt: -1 });
 StickerSchema.index({ tags: 1 });
-StickerSchema.index(
-  { name: "text", tags: "text" },
-  { weights: { name: 10, tags: 5 } }
-);
+StickerSchema.index({ name: "text", tags: "text" }, { weights: { name: 10, tags: 5 } });
 
 // Pre-save hooks
 StickerSchema.pre("save", async function (next) {
@@ -168,19 +156,38 @@ StickerSchema.pre("save", async function (next) {
 
 // Virtual for pack info
 StickerSchema.virtual("pack", {
-  ref: "StickerPack",
+  ref: "Pack",
   localField: "packId",
   foreignField: "_id",
   justOne: true,
 });
 
 // Methods
-StickerSchema.methods.incrementStats = async function (
-  field: keyof typeof StatsSchema.obj
-) {
+StickerSchema.methods.incrementStats = async function (field: keyof typeof StatsSchema.obj) {
   if (field in this.stats) {
     this.stats[field]++;
     await this.save();
+  }
+};
+
+StickerSchema.methods.incrementStats = async function (field: keyof typeof StatsSchema.obj) {
+  if (field in this.stats) {
+    await this.updateOne({ $inc: { [`stats.${field}`]: 1 } });
+  }
+};
+
+StickerSchema.methods.decrementStats = async function (field: keyof typeof StatsSchema.obj) {
+  if (field in this.stats) {
+    // Ensure we don't go below 0
+    await this.updateOne([
+      {
+        $set: {
+          [`stats.${field}`]: {
+            $max: [{ $subtract: [`$stats.${field}`, 1] }, 0],
+          },
+        },
+      },
+    ]);
   }
 };
 
@@ -192,10 +199,7 @@ StickerSchema.statics.findByTags = async function (tags: string[]) {
 };
 
 StickerSchema.statics.findPopular = async function (limit = 20) {
-  return this.find({})
-    .sort({ "stats.downloads": -1 })
-    .limit(limit)
-    .populate("creator", "username avatarUrl");
+  return this.find({}).sort({ "stats.downloads": -1 }).limit(limit).populate("creator", "username avatarUrl");
 };
 
 export const Sticker = mongoose.model<ISticker>("Sticker", StickerSchema);
