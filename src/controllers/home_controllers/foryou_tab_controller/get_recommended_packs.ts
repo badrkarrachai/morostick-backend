@@ -120,6 +120,50 @@ export const getRecommendedPacks = async (userId?: string, hiddenPacks: string[]
 
     const pipeline: PipelineStage[] = [
       { $match: baseMatch },
+      // Populate creator
+      {
+        $lookup: {
+          from: "users",
+          localField: "creator",
+          foreignField: "_id",
+          as: "creator",
+          pipeline: [
+            {
+              $lookup: {
+                from: "images",
+                localField: "avatar",
+                foreignField: "_id",
+                as: "avatar",
+              },
+            },
+            {
+              $addFields: {
+                avatar: { $arrayElemAt: ["$avatar", 0] },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                avatar: { url: 1 },
+              },
+            },
+          ],
+        },
+      },
+      {
+        $addFields: {
+          creator: { $arrayElemAt: ["$creator", 0] },
+        },
+      },
+      // Populate categories
+      {
+        $lookup: {
+          from: "categories",
+          localField: "categories",
+          foreignField: "_id",
+          as: "categories",
+        },
+      },
       {
         $addFields: {
           defaultScore: {
@@ -148,6 +192,50 @@ export const getRecommendedPacks = async (userId?: string, hiddenPacks: string[]
     const yearWeight = getRandomInRange(5, 15);
     const pipeline: PipelineStage[] = [
       { $match: baseMatch },
+      // Populate creator
+      {
+        $lookup: {
+          from: "users",
+          localField: "creator",
+          foreignField: "_id",
+          as: "creator",
+          pipeline: [
+            {
+              $lookup: {
+                from: "images",
+                localField: "avatar",
+                foreignField: "_id",
+                as: "avatar",
+              },
+            },
+            {
+              $addFields: {
+                avatar: { $arrayElemAt: ["$avatar", 0] },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                avatar: { url: 1 },
+              },
+            },
+          ],
+        },
+      },
+      {
+        $addFields: {
+          creator: { $arrayElemAt: ["$creator", 0] },
+        },
+      },
+      // Populate categories
+      {
+        $lookup: {
+          from: "categories",
+          localField: "categories",
+          foreignField: "_id",
+          as: "categories",
+        },
+      },
       {
         $addFields: {
           defaultScore: {
@@ -168,7 +256,53 @@ export const getRecommendedPacks = async (userId?: string, hiddenPacks: string[]
 
     const packs = await StickerPack.aggregate(pipeline);
     if (packs.length === 0) {
-      return transformPacks(await StickerPack.aggregate([{ $match: baseMatch }, { $sample: { size: getRandomInRange(5, 8) } }]));
+      const fallbackPipeline = [
+        { $match: baseMatch },
+        {
+          $lookup: {
+            from: "users",
+            localField: "creator",
+            foreignField: "_id",
+            as: "creator",
+            pipeline: [
+              {
+                $lookup: {
+                  from: "images",
+                  localField: "avatar",
+                  foreignField: "_id",
+                  as: "avatar",
+                },
+              },
+              {
+                $addFields: {
+                  avatar: { $arrayElemAt: ["$avatar", 0] },
+                },
+              },
+              {
+                $project: {
+                  name: 1,
+                  avatar: { url: 1 },
+                },
+              },
+            ],
+          },
+        },
+        {
+          $addFields: {
+            creator: { $arrayElemAt: ["$creator", 0] },
+          },
+        },
+        {
+          $lookup: {
+            from: "categories",
+            localField: "categories",
+            foreignField: "_id",
+            as: "categories",
+          },
+        },
+        { $sample: { size: getRandomInRange(5, 8) } },
+      ];
+      return transformPacks(await StickerPack.aggregate(fallbackPipeline));
     }
     return transformPacks(packs);
   }
@@ -181,6 +315,50 @@ export const getRecommendedPacks = async (userId?: string, hiddenPacks: string[]
 
   const pipeline: PipelineStage[] = [
     { $match: baseMatch },
+    // Populate creator
+    {
+      $lookup: {
+        from: "users",
+        localField: "creator",
+        foreignField: "_id",
+        as: "creator",
+        pipeline: [
+          {
+            $lookup: {
+              from: "images",
+              localField: "avatar",
+              foreignField: "_id",
+              as: "avatar",
+            },
+          },
+          {
+            $addFields: {
+              avatar: { $arrayElemAt: ["$avatar", 0] },
+            },
+          },
+          {
+            $project: {
+              name: 1,
+              avatar: { url: 1 },
+            },
+          },
+        ],
+      },
+    },
+    {
+      $addFields: {
+        creator: { $arrayElemAt: ["$creator", 0] },
+      },
+    },
+    // Populate categories
+    {
+      $lookup: {
+        from: "categories",
+        localField: "categories",
+        foreignField: "_id",
+        as: "categories",
+      },
+    },
     {
       $addFields: {
         terms: {
@@ -206,7 +384,7 @@ export const getRecommendedPacks = async (userId?: string, hiddenPacks: string[]
                             {
                               $toDouble: {
                                 $getField: {
-                                  field: { $toString: "$$this" },
+                                  field: { $toString: "$$this._id" },
                                   input: userPreferences.categoryWeights,
                                 },
                               },
@@ -224,7 +402,7 @@ export const getRecommendedPacks = async (userId?: string, hiddenPacks: string[]
             {
               $cond: {
                 if: {
-                  $in: ["$creator", userPreferences.creators.map((id) => new Types.ObjectId(id))],
+                  $in: ["$creator._id", userPreferences.creators.map((id) => new Types.ObjectId(id))],
                 },
                 then: creatorWeight,
                 else: 0,
@@ -262,14 +440,106 @@ export const getRecommendedPacks = async (userId?: string, hiddenPacks: string[]
     const packs = await StickerPack.aggregate(pipeline);
 
     if (packs.length === 0) {
-      const fallbackPacks = await StickerPack.aggregate([{ $match: baseMatch }, { $sample: { size: getRandomInRange(5, 8) } }]);
+      const fallbackPipeline = [
+        { $match: baseMatch },
+        {
+          $lookup: {
+            from: "users",
+            localField: "creator",
+            foreignField: "_id",
+            as: "creator",
+            pipeline: [
+              {
+                $lookup: {
+                  from: "images",
+                  localField: "avatar",
+                  foreignField: "_id",
+                  as: "avatar",
+                },
+              },
+              {
+                $addFields: {
+                  avatar: { $arrayElemAt: ["$avatar", 0] },
+                },
+              },
+              {
+                $project: {
+                  name: 1,
+                  avatar: { url: 1 },
+                },
+              },
+            ],
+          },
+        },
+        {
+          $addFields: {
+            creator: { $arrayElemAt: ["$creator", 0] },
+          },
+        },
+        {
+          $lookup: {
+            from: "categories",
+            localField: "categories",
+            foreignField: "_id",
+            as: "categories",
+          },
+        },
+        { $sample: { size: getRandomInRange(5, 8) } },
+      ];
+      const fallbackPacks = await StickerPack.aggregate(fallbackPipeline);
       return transformPacks(fallbackPacks);
     }
 
     return transformPacks(packs);
   } catch (error) {
     console.error("Error in recommendation pipeline:", error);
-    const emergencyPacks = await StickerPack.aggregate([{ $match: baseMatch }, { $sample: { size: getRandomInRange(5, 8) } }]);
+    const emergencyPipeline = [
+      { $match: baseMatch },
+      {
+        $lookup: {
+          from: "users",
+          localField: "creator",
+          foreignField: "_id",
+          as: "creator",
+          pipeline: [
+            {
+              $lookup: {
+                from: "images",
+                localField: "avatar",
+                foreignField: "_id",
+                as: "avatar",
+              },
+            },
+            {
+              $addFields: {
+                avatar: { $arrayElemAt: ["$avatar", 0] },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                avatar: { url: 1 },
+              },
+            },
+          ],
+        },
+      },
+      {
+        $addFields: {
+          creator: { $arrayElemAt: ["$creator", 0] },
+        },
+      },
+      {
+        $lookup: {
+          from: "categories",
+          localField: "categories",
+          foreignField: "_id",
+          as: "categories",
+        },
+      },
+      { $sample: { size: getRandomInRange(5, 8) } },
+    ];
+    const emergencyPacks = await StickerPack.aggregate(emergencyPipeline);
     return transformPacks(emergencyPacks);
   }
 };

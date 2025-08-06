@@ -9,6 +9,7 @@ import { checkAccountRecoveryStatus } from "../../utils/account_deletion_check_u
 import { formatUserData } from "../../utils/responces_templates/user_auth_response_template";
 import { sendWelcomeEmail } from "../../utils/email_sender_util";
 import { prepareMobileAuthResponse } from "../../utils/jwt_util";
+import { validateGoogleIdLinking } from "../../utils/social_account_validation_util";
 
 interface GoogleAuthRequest extends Request {
   body: {
@@ -69,12 +70,18 @@ export const handleMobileGoogleAuth = async (req: GoogleAuthRequest, res: Respon
       });
     }
 
+    // Validate that this Google ID isn't already linked to another account
+    const validation = await validateGoogleIdLinking(googleId, email, res);
+    if (!validation.isValid) {
+      return validation.errorResponse;
+    }
+
     let user = await User.findOne({ email }).populate("avatar");
     let messagesForUser: string[] = [];
 
     if (user) {
       // Check if the user has allowed google auth
-      if (!user.preferences.isGoogleAuthEnabled && user.googleId !== null) {
+      if (!user.preferences.isGoogleAuthEnabled) {
         return sendErrorResponse({
           res,
           message: "Google authentication is not allowed",
@@ -91,6 +98,7 @@ export const handleMobileGoogleAuth = async (req: GoogleAuthRequest, res: Respon
       user.emailVerified = true;
       user.authProvider = "google";
       user.lastLogin = new Date();
+      // Ensure Google auth is enabled since they successfully authenticated
       user.preferences.isGoogleAuthEnabled = true;
 
       // Update avatar if not set and picture is available
@@ -119,6 +127,9 @@ export const handleMobileGoogleAuth = async (req: GoogleAuthRequest, res: Respon
         emailVerified: true,
         password: hashedPassword,
         authProvider: "google",
+        preferences: {
+          isGoogleAuthEnabled: true,
+        },
       });
 
       await user.save();

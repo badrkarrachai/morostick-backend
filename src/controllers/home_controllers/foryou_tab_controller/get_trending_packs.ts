@@ -59,6 +59,50 @@ export const getTrendingPacks = async (userId?: string, hiddenPacks: string[] = 
           }),
         },
       },
+      // Populate creator
+      {
+        $lookup: {
+          from: "users",
+          localField: "creator",
+          foreignField: "_id",
+          as: "creator",
+          pipeline: [
+            {
+              $lookup: {
+                from: "images",
+                localField: "avatar",
+                foreignField: "_id",
+                as: "avatar",
+              },
+            },
+            {
+              $addFields: {
+                avatar: { $arrayElemAt: ["$avatar", 0] },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                avatar: { url: 1 },
+              },
+            },
+          ],
+        },
+      },
+      {
+        $addFields: {
+          creator: { $arrayElemAt: ["$creator", 0] },
+        },
+      },
+      // Populate categories
+      {
+        $lookup: {
+          from: "categories",
+          localField: "categories",
+          foreignField: "_id",
+          as: "categories",
+        },
+      },
       {
         $addFields: {
           randomBoost: { $rand: {} },
@@ -117,7 +161,7 @@ export const getTrendingPacks = async (userId?: string, hiddenPacks: string[] = 
       const fallbackDateWindow = new Date();
       fallbackDateWindow.setDate(fallbackDateWindow.getDate() - TIME_WINDOW.FALLBACK_DAYS);
 
-      const fallbackPacks = await StickerPack.aggregate([
+      const fallbackPipeline = [
         {
           $match: {
             isPrivate: false,
@@ -128,8 +172,53 @@ export const getTrendingPacks = async (userId?: string, hiddenPacks: string[] = 
             }),
           },
         },
+        // Populate creator
+        {
+          $lookup: {
+            from: "users",
+            localField: "creator",
+            foreignField: "_id",
+            as: "creator",
+            pipeline: [
+              {
+                $lookup: {
+                  from: "images",
+                  localField: "avatar",
+                  foreignField: "_id",
+                  as: "avatar",
+                },
+              },
+              {
+                $addFields: {
+                  avatar: { $arrayElemAt: ["$avatar", 0] },
+                },
+              },
+              {
+                $project: {
+                  name: 1,
+                  avatar: { url: 1 },
+                },
+              },
+            ],
+          },
+        },
+        {
+          $addFields: {
+            creator: { $arrayElemAt: ["$creator", 0] },
+          },
+        },
+        // Populate categories
+        {
+          $lookup: {
+            from: "categories",
+            localField: "categories",
+            foreignField: "_id",
+            as: "categories",
+          },
+        },
         { $sample: { size: getRandomInRange(PACK_LIMITS.MIN, PACK_LIMITS.MAX) } },
-      ]);
+      ];
+      const fallbackPacks = await StickerPack.aggregate(fallbackPipeline);
 
       if (fallbackPacks.length > 0) {
         return transformPacks(fallbackPacks);
@@ -152,7 +241,7 @@ export const getTrendingPacks = async (userId?: string, hiddenPacks: string[] = 
     }
 
     // Emergency fallback: Get any authorized packs
-    const emergencyPacks = await StickerPack.aggregate([
+    const emergencyPipeline = [
       {
         $match: {
           isPrivate: false,
@@ -162,8 +251,53 @@ export const getTrendingPacks = async (userId?: string, hiddenPacks: string[] = 
           }),
         },
       },
+      // Populate creator
+      {
+        $lookup: {
+          from: "users",
+          localField: "creator",
+          foreignField: "_id",
+          as: "creator",
+          pipeline: [
+            {
+              $lookup: {
+                from: "images",
+                localField: "avatar",
+                foreignField: "_id",
+                as: "avatar",
+              },
+            },
+            {
+              $addFields: {
+                avatar: { $arrayElemAt: ["$avatar", 0] },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                avatar: { url: 1 },
+              },
+            },
+          ],
+        },
+      },
+      {
+        $addFields: {
+          creator: { $arrayElemAt: ["$creator", 0] },
+        },
+      },
+      // Populate categories
+      {
+        $lookup: {
+          from: "categories",
+          localField: "categories",
+          foreignField: "_id",
+          as: "categories",
+        },
+      },
       { $sample: { size: getRandomInRange(PACK_LIMITS.MIN, PACK_LIMITS.MAX) } },
-    ]);
+    ];
+    const emergencyPacks = await StickerPack.aggregate(emergencyPipeline);
 
     return transformPacks(emergencyPacks);
   } catch (error) {

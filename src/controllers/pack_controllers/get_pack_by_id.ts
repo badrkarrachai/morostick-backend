@@ -41,13 +41,24 @@ export const getPackById = async (req: Request, res: Response) => {
       }
     } catch (error) {}
 
-    // Find the pack with visibility conditions
-    const pack = await StickerPack.findOne({
-      _id: packId,
-      $or: [{ isPrivate: false }, { isPrivate: true, isAuthorized: true }],
-    });
+    // First, try to find the pack without restrictions to check ownership
+    const pack = await StickerPack.findById(packId).populate("creator", "_id");
 
     if (!pack) {
+      return sendErrorResponse({
+        res,
+        message: "Pack not found",
+        errorCode: "PACK_NOT_FOUND",
+        errorDetails: "The requested pack does not exist.",
+        status: 404,
+      });
+    }
+
+    // Check if user owns the pack
+    const isUserOwner = userId && pack.creator && pack.creator._id.toString() === userId;
+
+    // Allow access if pack is public+authorized OR if user owns the pack
+    if (!isUserOwner && (pack.isPrivate || !pack.isAuthorized)) {
       return sendErrorResponse({
         res,
         message: "Pack not found",

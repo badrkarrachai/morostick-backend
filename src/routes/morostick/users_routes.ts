@@ -13,6 +13,7 @@ import { deleteUserAvatar, updateUserAvatar } from "../../controllers/users/upda
 import { updatePreferencesValidationRules, updateUserPreferences } from "../../controllers/auth_controllers/user_preferences";
 import { uploadCoverImage } from "../../utils/storage_util";
 import { deleteUserCoverImage, updateUserCoverImage } from "../../controllers/users/updating_details/update_user_cover_controller";
+import { getUserPacks, getUserPacksValidationRules } from "../../controllers/pack_controllers/get_user_packs_controller";
 
 const router = Router();
 
@@ -31,5 +32,8 @@ router.delete("/delete-profile-picture", auth, deleteUserAvatar);
 router.patch("/update-user-preferences", auth, checkAD, updatePreferencesValidationRules, updateUserPreferences);
 router.put("/update-cover-image", auth, uploadCoverImageFile, updateUserCoverImage);
 router.delete("/delete-cover-image", auth, deleteUserCoverImage);
+
+// User packs route - matches frontend expectation
+router.get("/get-user-packs", auth, getUserPacksValidationRules, getUserPacks);
 
 export default router;

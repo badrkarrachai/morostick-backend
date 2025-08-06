@@ -9,7 +9,8 @@ import categoryRoutes from "./categories_route";
 import searchRoutes from "./search_routes";
 import favoriteroutes from "./favorite_routes";
 import aiRoutes from "./ai_routes";
-
+import mainCanvasRoutes from "./main_canvas_routes";
+import accountLinkingRoutes from "./account_linking_routes";
 import { rateLimiterGeneral } from "../../utils/rate_limiter_util";
 
 const router = Router();
@@ -27,5 +28,7 @@ router.use("/category", categoryRoutes);
 router.use("/search", searchRoutes);
 router.use("/favorite", favoriteroutes);
 router.use("/ai", aiRoutes);
+router.use("/main-canvas", mainCanvasRoutes);
+router.use("/account", accountLinkingRoutes);
 
 export default router;

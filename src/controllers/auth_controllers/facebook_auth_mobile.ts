@@ -11,6 +11,7 @@ import { prepareMobileAuthResponse } from "../../utils/jwt_util";
 import axios, { AxiosResponse } from "axios";
 import { Types } from "mongoose";
 import jwt from "jsonwebtoken";
+import { validateFacebookIdLinking } from "../../utils/social_account_validation_util";
 
 // Define interfaces for type safety
 interface FacebookAuthRequest extends Request {
@@ -201,12 +202,18 @@ const processUserData = async (facebookData: FacebookUserData, res: Response) =>
     });
   }
 
+  // Validate that this Facebook ID isn't already linked to another account
+  const validation = await validateFacebookIdLinking(facebookId, email, res);
+  if (!validation.isValid) {
+    return validation.errorResponse;
+  }
+
   let user = await User.findOne({ email });
   const messagesForUser: string[] = [];
 
   if (user) {
     // Check if the user has allowed facebook auth
-    if (!user.preferences.isFacebookAuthEnabled && user.facebookId !== null) {
+    if (!user.preferences.isFacebookAuthEnabled) {
       return sendErrorResponse({
         res,
         message: "Facebook authentication is not allowed",
@@ -223,6 +230,7 @@ const processUserData = async (facebookData: FacebookUserData, res: Response) =>
     user.emailVerified = true;
     user.authProvider = "facebook";
     user.lastLogin = new Date();
+    // Ensure Facebook auth is enabled since they successfully authenticated
     user.preferences.isFacebookAuthEnabled = true;
 
     // Update profile picture if not set
@@ -252,6 +260,9 @@ const processUserData = async (facebookData: FacebookUserData, res: Response) =>
       authProvider: "facebook",
       isActivated: true,
       lastLogin: new Date(),
+      preferences: {
+        isFacebookAuthEnabled: true, // Enable Facebook auth for new Facebook users
+      },
     });
 
     await user.save();

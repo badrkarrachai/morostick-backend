@@ -14,6 +14,7 @@ export const getFavoriteStickersValidationRules = [
 
 export const getFavoriteStickers = async (req: Request, res: Response) => {
   try {
+    // Validate request
     const validationErrors = await validateRequest(req, res, getFavoriteStickersValidationRules);
 
     if (validationErrors !== "validation successful") {
@@ -61,111 +62,93 @@ export const getFavoriteStickers = async (req: Request, res: Response) => {
       });
     }
 
-    const matchType = type !== "all" ? { isAnimated: type === "animated" } : {};
+    // Build query for stickers
+    const baseQuery: any = {
+      _id: { $in: user.favoritesStickers },
+    };
 
-    // Get total count
-    const totalStickers = await Sticker.aggregate([
-      {
-        $match: {
-          _id: { $in: user.favoritesStickers },
-        },
-      },
-      {
-        $lookup: {
-          from: "packs",
-          localField: "packId",
-          foreignField: "_id",
-          as: "packId",
-        },
-      },
-      {
-        $unwind: "$packId",
-      },
-      {
-        $match: {
-          "packId.isPrivate": false,
-          "packId.isAuthorized": true,
-          ...matchType,
-        },
-      },
-      {
-        $count: "total",
-      },
-    ]);
+    // Add type filter if specified
+    if (type !== "all") {
+      baseQuery["isAnimated"] = type === "animated";
+    }
 
-    const total = totalStickers[0]?.total || 0;
-    const totalPages = Math.ceil(total / limit);
+    // Get total count for pagination
+    const totalStickers = await Sticker.countDocuments(baseQuery);
+    const totalPages = Math.ceil(totalStickers / limit);
     const skip = (page - 1) * limit;
 
-    // Get favorite stickers with all necessary data
-    const favoriteStickers = await Sticker.aggregate([
+    // Fetch stickers (without sorting here since we need to preserve favorites order)
+    const favoriteStickers = await Sticker.find(baseQuery).populate([
       {
-        $match: {
-          _id: { $in: user.favoritesStickers },
+        path: "packId",
+        select: "name isPrivate isAuthorized isAnimatedPack creator categories",
+        // Remove match condition to get all packs, we'll filter manually
+        populate: [
+          {
+            path: "creator",
+            select: "name avatar",
+            populate: {
+              path: "avatar",
+              select: "url",
+            },
+          },
+          {
+            path: "categories",
+            select: "name slug emoji",
+          },
+        ],
+      },
+      {
+        path: "creator",
+        select: "name avatar",
+        populate: {
+          path: "avatar",
+          select: "url",
         },
       },
       {
-        $lookup: {
-          from: "packs",
-          localField: "packId",
-          foreignField: "_id",
-          as: "packId",
-        },
-      },
-      {
-        $unwind: "$packId",
-      },
-      {
-        $match: {
-          "packId.isPrivate": false,
-          "packId.isAuthorized": true,
-          ...matchType,
-        },
-      },
-      {
-        $lookup: {
-          from: "users",
-          localField: "creator",
-          foreignField: "_id",
-          as: "creator",
-        },
-      },
-      {
-        $unwind: "$creator",
-      },
-      {
-        $lookup: {
-          from: "categories",
-          localField: "categories",
-          foreignField: "_id",
-          as: "categories",
-        },
-      },
-      {
-        $sort: { createdAt: -1 }, // Sort by newest first
-      },
-      {
-        $skip: skip,
-      },
-      {
-        $limit: limit,
+        path: "categories",
+        select: "name slug emoji",
       },
     ]);
+
+    // Filter stickers: include those from public+authorized packs OR packs owned by the user
+    const validStickers = favoriteStickers.filter((sticker) => {
+      if (!sticker.packId) return false;
+
+      const pack = sticker.packId as any;
+      const isUserOwner = pack.creator && pack.creator._id.toString() === userId;
+
+      // Include if pack is public and authorized, OR if user owns the pack
+      return (!pack.isPrivate && pack.isAuthorized) || isUserOwner;
+    });
+
+    // Sort stickers by the order they appear in user's favorites array (newest first)
+    // Reverse the favorites array so newest favorites (at the end) come first
+    const reversedFavorites = [...user.favoritesStickers].reverse();
+    const sortedStickers = validStickers.sort((a, b) => {
+      const aIndex = reversedFavorites.findIndex((id) => id.equals(a._id as any));
+      const bIndex = reversedFavorites.findIndex((id) => id.equals(b._id as any));
+      return aIndex - bIndex;
+    });
+
+    // Apply pagination to sorted results
+    const paginatedStickers = sortedStickers.slice(skip, skip + limit);
 
     // Transform stickers to include favorite status
     const stickerViews = await Promise.all(
-      favoriteStickers.map(async (sticker) => ({
+      paginatedStickers.map(async (sticker) => ({
         ...(await transformSticker(sticker)),
         isFavorite: true,
       }))
     );
 
-    // Prepare pagination info
+    // Prepare pagination info (use valid stickers count for actual returned data)
     const paginationInfo: PaginationInfo = {
       currentPage: page,
       pageSize: limit,
       totalPages,
-      totalItems: total,
+      totalItems: totalStickers,
       hasNextPage: page < totalPages,
       hasPrevPage: page > 1,
     };

@@ -35,7 +35,7 @@ import { validateStickerRequirements } from "../../utils/storage_util";
 
 // Validation rules for sticker upload
 export const uploadStickerValidationRules = [
-  param("packId").isMongoId().withMessage("Invalid pack ID"),
+  body("packId").isMongoId().withMessage("Invalid pack ID"),
   body("name")
     .trim()
     .notEmpty()
@@ -76,8 +76,7 @@ export const uploadStickerValidationRules = [
 export const uploadSticker = async (req: Request, res: Response) => {
   try {
     const userId = req.user.id;
-    const { packId } = req.params;
-    const { name, categoryIds, categoryName } = req.body;
+    const { packId, name, categoryIds, categoryName } = req.body;
     let emojis;
     // Extract isAnimated flag more reliably and check file mimetype
     const isGif = req.file && req.file.mimetype === "image/gif";

@@ -28,6 +28,50 @@ export async function getSuggestedPacks(
     if (!userId) {
       const pipeline: PipelineStage[] = [
         { $match: baseMatch },
+        // Populate creator
+        {
+          $lookup: {
+            from: "users",
+            localField: "creator",
+            foreignField: "_id",
+            as: "creator",
+            pipeline: [
+              {
+                $lookup: {
+                  from: "images",
+                  localField: "avatar",
+                  foreignField: "_id",
+                  as: "avatar",
+                },
+              },
+              {
+                $addFields: {
+                  avatar: { $arrayElemAt: ["$avatar", 0] },
+                },
+              },
+              {
+                $project: {
+                  name: 1,
+                  avatar: { url: 1 },
+                },
+              },
+            ],
+          },
+        },
+        {
+          $addFields: {
+            creator: { $arrayElemAt: ["$creator", 0] },
+          },
+        },
+        // Populate categories
+        {
+          $lookup: {
+            from: "categories",
+            localField: "categories",
+            foreignField: "_id",
+            as: "categories",
+          },
+        },
         // Calculate popularity score
         {
           $addFields: {
@@ -98,6 +142,50 @@ export async function getSuggestedPacks(
     // Build personalized pipeline
     const personalizedPipeline: PipelineStage[] = [
       { $match: baseMatch },
+      // Populate creator
+      {
+        $lookup: {
+          from: "users",
+          localField: "creator",
+          foreignField: "_id",
+          as: "creator",
+          pipeline: [
+            {
+              $lookup: {
+                from: "images",
+                localField: "avatar",
+                foreignField: "_id",
+                as: "avatar",
+              },
+            },
+            {
+              $addFields: {
+                avatar: { $arrayElemAt: ["$avatar", 0] },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                avatar: { url: 1 },
+              },
+            },
+          ],
+        },
+      },
+      {
+        $addFields: {
+          creator: { $arrayElemAt: ["$creator", 0] },
+        },
+      },
+      // Populate categories
+      {
+        $lookup: {
+          from: "categories",
+          localField: "categories",
+          foreignField: "_id",
+          as: "categories",
+        },
+      },
       {
         $addFields: {
           personalScore: {
@@ -124,7 +212,7 @@ export async function getSuggestedPacks(
               // Creator match bonus
               {
                 $cond: {
-                  if: { $in: ["$creator", Array.from(userPrefs.creators).map((id) => new Types.ObjectId(id))] },
+                  if: { $in: ["$creator._id", Array.from(userPrefs.creators).map((id) => new Types.ObjectId(id))] },
                   then: 500,
                   else: 0,
                 },
@@ -156,6 +244,50 @@ export async function getSuggestedPacks(
     // Fallback to basic sorting if anything fails
     const pipeline: PipelineStage[] = [
       { $match: { isPrivate: false, isAuthorized: true } },
+      // Populate creator
+      {
+        $lookup: {
+          from: "users",
+          localField: "creator",
+          foreignField: "_id",
+          as: "creator",
+          pipeline: [
+            {
+              $lookup: {
+                from: "images",
+                localField: "avatar",
+                foreignField: "_id",
+                as: "avatar",
+              },
+            },
+            {
+              $addFields: {
+                avatar: { $arrayElemAt: ["$avatar", 0] },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                avatar: { url: 1 },
+              },
+            },
+          ],
+        },
+      },
+      {
+        $addFields: {
+          creator: { $arrayElemAt: ["$creator", 0] },
+        },
+      },
+      // Populate categories
+      {
+        $lookup: {
+          from: "categories",
+          localField: "categories",
+          foreignField: "_id",
+          as: "categories",
+        },
+      },
       { $sort: { createdAt: -1, _id: 1 } },
       { $skip: Math.max(0, (page - 1) * limit) },
       { $limit: limit },

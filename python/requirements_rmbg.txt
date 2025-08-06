@@ -12,6 +12,11 @@ transformers>=4.25.0
 huggingface-hub>=0.15.1
 safetensors>=0.3.0
 
+# ONNX Runtime for RMBG-2.0
+onnxruntime>=1.15.0
+# For CUDA support (uncomment if needed)
+# onnxruntime-gpu>=1.15.0
+
 # Optional dependencies for improved performance
 accelerate>=0.17.0
 

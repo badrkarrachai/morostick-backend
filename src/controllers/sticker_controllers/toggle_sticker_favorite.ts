@@ -7,7 +7,7 @@ import { sendSuccessResponse, sendErrorResponse } from "../../utils/response_han
 import { validateRequest } from "../../utils/validations_util";
 import { transformSticker } from "../../utils/responces_templates/response_views_transformer";
 
-const MAX_FAVORITE_STICKERS = 30;
+const MAX_FAVORITE_STICKERS_PER_TYPE = 30;
 
 export const addStickerToFavoritesValidationRules = [
   query("stickerId").exists().withMessage("Sticker ID is required").isMongoId().withMessage("Invalid sticker ID format"),
@@ -32,13 +32,27 @@ export const addStickerToFavorites = async (req: Request, res: Response) => {
       });
     }
 
-    // Find the sticker and populate its pack to check privacy
+    // Find the sticker and populate its pack to check privacy and ownership
     const sticker = await Sticker.findById(stickerId).populate({
       path: "packId",
-      select: "isPrivate isAuthorized",
+      select: "isPrivate isAuthorized creator",
     });
 
-    if (!sticker || !sticker.packId || (sticker.packId as any).isPrivate || !(sticker.packId as any).isAuthorized) {
+    if (!sticker || !sticker.packId) {
+      return sendErrorResponse({
+        res,
+        message: "Sticker not found",
+        errorCode: "STICKER_NOT_FOUND",
+        errorDetails: "The requested sticker does not exist",
+        status: 404,
+      });
+    }
+
+    const pack = sticker.packId as any;
+    const isUserOwner = pack.creator && pack.creator.toString() === userId;
+
+    // Allow access if pack is public and authorized, OR if user owns the pack
+    if (!isUserOwner && (pack.isPrivate || !pack.isAuthorized)) {
       return sendErrorResponse({
         res,
         message: "Sticker not found",
@@ -81,18 +95,36 @@ export const addStickerToFavorites = async (req: Request, res: Response) => {
         },
       });
     } else {
-      // Check if user has reached the maximum favorites limit
-      if (user.favoritesStickers.length >= MAX_FAVORITE_STICKERS) {
-        // Get the oldest favorite sticker
-        const oldestFavoriteId = user.favoritesStickers[0];
+      // Check if user has reached the maximum favorites limit for this sticker type
+      // Get current stickers by type to check per-type limits
+      const allCurrentStickers = await Sticker.find({
+        _id: { $in: user.favoritesStickers },
+      }).select("isAnimated");
 
-        // Remove the oldest favorite
-        user.favoritesStickers = user.favoritesStickers.slice(1);
+      const currentStickersByType = allCurrentStickers.filter((s) => s.isAnimated === sticker.isAnimated);
 
-        // Decrement favorites count for the removed sticker
-        const oldestSticker = await Sticker.findById(oldestFavoriteId);
-        if (oldestSticker) {
-          await oldestSticker.decrementStats("favorites");
+      if (currentStickersByType.length >= MAX_FAVORITE_STICKERS_PER_TYPE) {
+        // Find the oldest sticker ID of the same type to remove
+        let oldestStickerIdToRemove = null;
+
+        // Go through user's favorites in order (oldest first) to find first sticker of same type
+        for (const favoriteId of user.favoritesStickers) {
+          const candidateSticker = allCurrentStickers.find((s) => (s._id as any).equals(favoriteId));
+          if (candidateSticker && candidateSticker.isAnimated === sticker.isAnimated) {
+            oldestStickerIdToRemove = favoriteId;
+            break;
+          }
+        }
+
+        if (oldestStickerIdToRemove) {
+          // Remove the oldest sticker of the same type from user's favorites
+          user.favoritesStickers = user.favoritesStickers.filter((id) => !id.equals(oldestStickerIdToRemove));
+
+          // Fetch the full sticker document and decrement favorites count
+          const oldestSticker = await Sticker.findById(oldestStickerIdToRemove);
+          if (oldestSticker) {
+            await oldestSticker.decrementStats("favorites");
+          }
         }
       }
 
@@ -106,8 +138,12 @@ export const addStickerToFavorites = async (req: Request, res: Response) => {
       // Transform sticker for response
       const stickerView = await transformSticker(sticker);
 
-      // Check if we removed an old sticker
-      const removedOldSticker = user.favoritesStickers.length === MAX_FAVORITE_STICKERS;
+      // Check if we removed an old sticker (compare against updated count for this type)
+      const updatedStickersByType = await Sticker.find({
+        _id: { $in: user.favoritesStickers },
+        isAnimated: sticker.isAnimated,
+      });
+      const removedOldSticker = updatedStickersByType.length === MAX_FAVORITE_STICKERS_PER_TYPE;
 
       return sendSuccessResponse({
         res,
@@ -120,7 +156,7 @@ export const addStickerToFavorites = async (req: Request, res: Response) => {
           sticker: stickerView,
           reachedLimit: removedOldSticker,
           currentFavoriteCount: user.favoritesStickers.length,
-          maxFavorites: MAX_FAVORITE_STICKERS,
+          maxFavorites: MAX_FAVORITE_STICKERS_PER_TYPE,
         },
       });
     }

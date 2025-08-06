@@ -54,7 +54,13 @@ function transformStickerDirect(
     webpUrl: sticker.webpUrl,
     isAnimated: sticker.isAnimated,
     fileSize: sticker.fileSize,
-    creator: includeCreator ? transformCreator(sticker.creator, useCache) : null,
+    creator: includeCreator
+      ? transformCreator(sticker.creator, useCache) || {
+          id: "unknown",
+          name: "Unknown Creator",
+          avatarUrl: "",
+        }
+      : null,
     dimensions: sticker.dimensions,
     format: sticker.format,
     categories: includeCategories ? sticker.categories.map((cat) => transformCategory(cat, useCache)) : null,
@@ -67,7 +73,12 @@ function transformStickerDirect(
 }
 
 // Optimized creator transform with optional caching
-function transformCreator(user: any, useCache: boolean = true): CreatorView {
+function transformCreator(user: any, useCache: boolean = true): CreatorView | null {
+  // Handle null/undefined user
+  if (!user) {
+    return null;
+  }
+
   if (useCache && transformCache.creators.has(user)) {
     return transformCache.creators.get(user)!;
   }
@@ -143,7 +154,6 @@ export async function transformSticker(
 
   try {
     const query = Sticker.findById(input instanceof Document ? input._id : input)
-      .populate("categories")
       .populate({
         path: "creator",
         select: "name avatar",
@@ -162,7 +172,7 @@ export async function transformSticker(
 
     if (!sticker) return null;
 
-    return transformStickerDirect(sticker, true, true, favorites, useCache);
+    return transformStickerDirect(sticker, true, false, favorites, useCache);
   } catch (error) {
     console.error("Error transforming sticker:", error);
     return null;
@@ -192,7 +202,6 @@ export async function transformPack(
 
   try {
     const query = StickerPack.findById(input instanceof Document ? input._id : input)
-      .populate("categories")
       .populate({
         path: "creator",
         select: "name avatar",
@@ -220,7 +229,6 @@ export async function transformPack(
               select: "url",
             },
           },
-          { path: "categories" },
         ],
       });
     }
@@ -241,17 +249,25 @@ export async function transformPack(
 
     if (!pack) return null;
 
+    const creator = transformCreator(pack.creator, useCache);
+
     return {
       id: pack._id.toString(),
       name: pack.name,
       description: pack.description,
       trayIcon: pack.trayIcon,
-      creator: transformCreator(pack.creator, useCache),
-      stickers: includeStickers ? pack.stickers.map((sticker) => transformStickerDirect(sticker, false, false, favorites, useCache)) : [],
+      creator: creator || {
+        id: "unknown",
+        name: "Unknown Creator",
+        avatarUrl: "",
+      },
+      stickers: includeStickers
+        ? pack.stickers.filter((sticker) => sticker != null).map((sticker) => transformStickerDirect(sticker, false, false, favorites, useCache))
+        : [],
       isPrivate: pack.isPrivate,
       isAuthorized: pack.isAuthorized,
       isAnimatedPack: pack.isAnimatedPack,
-      categories: pack.categories.map((cat) => transformCategory(cat, useCache)),
+      categories: [],
       totalStickers,
       stats: pack.stats,
       createdAt: pack.createdAt,

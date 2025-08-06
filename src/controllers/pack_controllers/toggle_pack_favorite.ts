@@ -31,14 +31,24 @@ export const addPackToFavorites = async (req: Request, res: Response) => {
       });
     }
 
-    // Find the pack
-    const pack = await StickerPack.findOne({
-      _id: packId,
-      isPrivate: false,
-      isAuthorized: true,
-    });
+    // Find the pack and check ownership
+    const pack = await StickerPack.findById(packId).populate("creator", "_id");
 
     if (!pack) {
+      return sendErrorResponse({
+        res,
+        message: "Pack not found",
+        errorCode: "PACK_NOT_FOUND",
+        errorDetails: "The requested pack does not exist",
+        status: 404,
+      });
+    }
+
+    // Check if user owns the pack
+    const isUserOwner = pack.creator && pack.creator._id.toString() === userId;
+
+    // Allow access if pack is public+authorized OR if user owns the pack
+    if (!isUserOwner && (pack.isPrivate || !pack.isAuthorized)) {
       return sendErrorResponse({
         res,
         message: "Pack not found",

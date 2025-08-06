@@ -16,6 +16,8 @@ import { getPackById } from "../../controllers/pack_controllers/get_pack_by_id";
 import { addPackToFavorites, addPackToFavoritesValidationRules } from "../../controllers/pack_controllers/toggle_pack_favorite";
 import { createPackReport, createPackReportValidationRules } from "../../controllers/pack_controllers/report_pack_controller";
 import { hidePack, hidePackValidationRules, unhidePack } from "../../controllers/pack_controllers/hide_pack_controller";
+import { getUserPacks, getUserPacksValidationRules } from "../../controllers/pack_controllers/get_user_packs_controller";
+import { togglePackPrivacy, togglePackPrivacyValidationRules } from "../../controllers/pack_controllers/toggle_pack_privacy_controller";
 
 const router = Router();
 
@@ -24,7 +26,7 @@ const checkAD = [checkAccountNotDeleted, checkAccountActivated];
 
 // Pack CRUD routes
 router.post("/create", auth, checkAD, createPack);
-router.delete("/delete/:packId", auth, checkAD, deletePack);
+router.delete("/delete", auth, checkAD, deletePack);
 router.post("/update/:packId", auth, checkAD, updatePack);
 router.get("/get-by-id", getPackById);
 
@@ -35,5 +37,9 @@ router.post("/favorite-toggle", auth, checkAD, addPackToFavoritesValidationRules
 router.post("/report-create", auth, checkAD, createPackReportValidationRules, createPackReport);
 router.post("/hide", auth, hidePackValidationRules, hidePack);
 router.post("/unhide", auth, hidePackValidationRules, unhidePack);
+
+// User pack management routes
+router.get("/user-packs", auth, getUserPacksValidationRules, getUserPacks);
+router.post("/toggle-privacy", auth, checkAD, togglePackPrivacyValidationRules, togglePackPrivacy);
 
 export default router;

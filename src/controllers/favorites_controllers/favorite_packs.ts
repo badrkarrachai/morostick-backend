@@ -45,11 +45,30 @@ export const getFavoritePacks = async (req: Request, res: Response) => {
       });
     }
 
+    // If user has no favorites, return early
+    if (!user.favoritesPacks?.length) {
+      return sendSuccessResponse({
+        res,
+        message: "No favorite packs found",
+        data: [],
+        pagination: {
+          currentPage: 1,
+          pageSize: limit,
+          totalPages: 0,
+          totalItems: 0,
+          hasNextPage: false,
+          hasPrevPage: false,
+        },
+      });
+    }
+
     // Build query for packs
     const baseQuery = {
       _id: { $in: user.favoritesPacks },
-      isPrivate: false,
-      isAuthorized: true,
+      $or: [
+        { isPrivate: false, isAuthorized: true }, // Public authorized packs
+        { isPrivate: true, creator: userId }, // Private packs owned by user
+      ],
     };
 
     // Add type filter if specified
@@ -62,33 +81,41 @@ export const getFavoritePacks = async (req: Request, res: Response) => {
     const totalPages = Math.ceil(totalPacks / limit);
     const skip = (page - 1) * limit;
 
-    // Fetch packs with pagination
-    const favoritePacks = await StickerPack.find(baseQuery)
-      .populate([
-        {
-          path: "creator",
-          select: "name avatar",
-          populate: {
-            path: "avatar",
-            select: "url",
-          },
+    // Fetch packs (without sorting here since we need to preserve favorites order)
+    const favoritePacks = await StickerPack.find(baseQuery).populate([
+      {
+        path: "creator",
+        select: "name avatar",
+        populate: {
+          path: "avatar",
+          select: "url",
         },
-        {
-          path: "categories",
-          select: "name slug emoji",
-        },
-        {
-          path: "stickers",
-          select: "thumbnailUrl webpUrl name emojis stats dimensions isAnimated fileSize",
-          options: { sort: { position: 1 } },
-        },
-      ])
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+      },
+      {
+        path: "categories",
+        select: "name slug emoji",
+      },
+      {
+        path: "stickers",
+        select: "thumbnailUrl webpUrl name emojis stats dimensions isAnimated fileSize",
+        options: { sort: { position: 1 } },
+      },
+    ]);
+
+    // Sort packs by the order they appear in user's favorites array (newest first)
+    // Reverse the favorites array so newest favorites (at the end) come first
+    const reversedFavorites = [...user.favoritesPacks].reverse();
+    const sortedPacks = favoritePacks.sort((a, b) => {
+      const aIndex = reversedFavorites.findIndex((id) => id.equals(a._id as any));
+      const bIndex = reversedFavorites.findIndex((id) => id.equals(b._id as any));
+      return aIndex - bIndex;
+    });
+
+    // Apply pagination to sorted results
+    const paginatedPacks = sortedPacks.slice(skip, skip + limit);
 
     // Transform packs
-    const packViews = await Promise.all(favoritePacks.map((pack) => transformPack(pack)));
+    const packViews = await Promise.all(paginatedPacks.map((pack) => transformPack(pack)));
 
     // Prepare pagination info
     const paginationInfo: PaginationInfo = {
